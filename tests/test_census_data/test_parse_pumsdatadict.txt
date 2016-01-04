@@ -1,0 +1,133 @@
+TEST ACS PUMS DATA DICTIONARY
+January 1, 2016
+
+HOUSING RECORD
+
+RT         1      
+    Record Type			
+           H .Housing Record or Group Quarters Unit
+
+PUMA00     5      
+    Public use microdata area code (PUMA) based on Census 2000 definition for data
+    collected prior to 2012. Use in combination with PUMA10.          
+           00100..08200 .Public use microdata area codes 
+                  77777 .Combination of 01801, 01802, and 01905 in Louisiana
+	          -0009 .Code classification is Not Applicable because data 
+                        .collected in 2012 or later      
+
+Note: Public Use Microdata Areas (PUMAs) designate areas of 100,000 or more 
+population.  Use with ST for unique code. PUMA00 applies to data collected in 
+calendar years 2011 and earlier. Users of multi-year datasets that contain data 
+from before and after 2012 should use PUMA00 and PUMA10 together where possible, 
+but not all PUMAs will be comparable. See http://tigerweb.geo.census.gov to 
+identify PUMA changes between the two vintages.
+
+ADJHSG     7
+    Adjustment factor for housing dollar amounts (6 implied decimal places)
+           1086032 .2009 factor
+  	   1068395 .2010 factor
+ 	   1035725 .2011 factor
+   	   1014531 .2012 factor
+           1000000 .2013 factor
+
+ADJINC     7      
+Adjustment factor for income and earnings dollar amounts (6 implied decimal places)
+           1007549 .2013 factor (1.007549)
+
+Note: The value of ADJINC inflation-adjusts reported income to 2013 dollars.  ADJINC applies to variables FINCP and HINCP in the housing record, and variables INTP, OIP, PAP, PERNP, PINCP, RETP, SEMP, SSIP, SSP, and WAGP in the person record. 
+
+
+NP         2      
+    Number of person records following this housing record
+               00 .Vacant unit
+               01 .One person record (one person in household or  
+                  .any person in group quarters)
+           02..20 .Number of person records (number of persons in
+                  .household)
+
+GASP       3      
+    Gas (monthly cost)
+ 
+                bbb .N/A (GQ/vacant)				
+                001 .Included in rent or in condo fee
+                002 .Included in electricity payment
+                003 .No charge or gas not used
+           004..999 .$4 to $999 (Rounded and top-coded)
+
+Note: Use values from ADJHSG to adjust GASP values 4 and over to constant dollars.
+
+RWAT       1      
+    Hot and cold running water
+           b .N/A (GQ)
+           1 .Yes
+           2 .No
+	   9. Case is from Puerto Rico, RWAT not applicable
+
+WGTP10     5
+    Housing Weight replicate 10
+           -9999..09999 .Integer weight of housing unit
+WGTP11     5
+    Housing Weight replicate 11
+           -9999..09999 .Integer weight of housing unit
+
+WGTP54     5
+    Housing Weight replicate 54
+
+           -9999..09999 .Integer weight of housing unit
+
+WGTP80     5
+    Housing Weight replicate 80
+           -9999..09999 .Integer weight of housing unit
+
+
+PERSON RECORD
+
+RT         1      
+    Record Type                         
+           P .Person Record
+
+PUMA       5      
+    Public use microdata area code (PUMA) based on 2010 Census definition         
+           00100..70301 .Public use microdata area codes
+           		 
+Note: Public use microdata areas (PUMAs) designate areas of 100,000 or more population.  Use with ST for unique code.
+
+DEAR	   1
+    Hearing difficulty
+           1. Yes
+           2. No
+
+MARHYP     4
+    Year last married
+           bbbb. N/A (age less than 15 years; never married)
+           1932 .1932 or earlier (Bottom-coded)
+           1933 .1933
+           2010 .2010
+	   2011 .2011
+           2012 .2012
+           2013 .2013
+
+NWAB       1 (UNEDITED - See "Employment Status Recode" (ESR))
+    Temporary absence from work 
+           b .N/A (less than 16 years old/at work/on layoff)
+           1 .Yes
+           2 .No
+           3 .Did not report
+
+Note: NWAB has a note in the variable name line and after the entry.
+
+Note: NWAB now has 2 notes after the entry.
+
+PWGTP80    5
+    Person's Weight replicate 80
+           -9999..09999 .Integer weight of person
+
+Note for both Industry and Occupation lists in Data Dictionary:
+
+*  In cases where the SOC occupation code ends in X(s) or Y(s), two or more 
+   SOC occupation codes were aggregated to correspond to a specific Census 
+   occupation code. In these cases, the Census occupation description is used 
+   for the SOC occupation title.
+
+** These codes are pseudo codes developed by the Census Bureau and are not
+   official or equivalent NAICS or SOC codes.
