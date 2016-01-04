@@ -1,0 +1,180 @@
+{
+    "title": "TEST ACS PUMS DATA DICTIONARY",
+    "date": "January 1, 2016",
+    "record_types": {
+        "HOUSING RECORD": {
+            "RT": {
+                "length": "1",
+                "description": "Record Type",
+                "var_codes": {
+                    "H": "Housing Record or Group Quarters Unit"
+                }
+            },
+            "PUMA00": {
+                "length": "5",
+                "description": "Public use microdata area code (PUMA) based on Census 2000 definition for data collected prior to 2012. Use in combination with PUMA10.",
+                "var_codes": {
+                    "00100..08200": "Public use microdata area codes",
+                    "77777": "Combination of 01801, 01802, and 01905 in Louisiana",
+                    "-0009": "Code classification is Not Applicable because data collected in 2012 or later"
+                },
+                "notes": [
+                    "Note: Public Use Microdata Areas (PUMAs) designate areas of 100,000 or more population.  Use with ST for unique code. PUMA00 applies to data collected in calendar years 2011 and earlier. Users of multi-year datasets that contain data from before and after 2012 should use PUMA00 and PUMA10 together where possible, but not all PUMAs will be comparable. See http://tigerweb.geo.census.gov to identify PUMA changes between the two vintages."
+                ]
+            },
+            "ADJHSG": {
+                "length": "7",
+                "description": "Adjustment factor for housing dollar amounts (6 implied decimal places)",
+                "var_codes": {
+                    "1086032": "2009 factor",
+                    "1068395": "2010 factor",
+                    "1035725": "2011 factor",
+                    "1014531": "2012 factor",
+                    "1000000": "2013 factor"
+                }
+            },
+            "ADJINC": {
+                "length": "7",
+                "description": "Adjustment factor for income and earnings dollar amounts (6 implied decimal places)",
+                "var_codes": {
+                    "1007549": "2013 factor (1.007549)"
+                },
+                "notes": [
+                    "Note: The value of ADJINC inflation-adjusts reported income to 2013 dollars.  ADJINC applies to variables FINCP and HINCP in the housing record, and variables INTP, OIP, PAP, PERNP, PINCP, RETP, SEMP, SSIP, SSP, and WAGP in the person record."
+                ]
+            },
+            "NP": {
+                "length": "2",
+                "description": "Number of person records following this housing record",
+                "var_codes": {
+                    "00": "Vacant unit",
+                    "01": "One person record (one person in household or any person in group quarters)",
+                    "02..20": "Number of person records (number of persons in household)"
+                }
+            },
+            "GASP": {
+                "length": "3",
+                "description": "Gas (monthly cost)",
+                "var_codes": {
+                    "bbb": "N/A (GQ/vacant)",
+                    "001": "Included in rent or in condo fee",
+                    "002": "Included in electricity payment",
+                    "003": "No charge or gas not used",
+                    "004..999": "$4 to $999 (Rounded and top-coded)"
+                },
+                "notes": [
+                    "Note: Use values from ADJHSG to adjust GASP values 4 and over to constant dollars."
+                ]
+            },
+            "RWAT": {
+                "length": "1",
+                "description": "Hot and cold running water",
+                "var_codes": {
+                    "b": "N/A (GQ)",
+                    "1": "Yes",
+                    "2": "No",
+                    "9": "Case is from Puerto Rico, RWAT not applicable"
+                }
+            },
+            "WGTP10": {
+                "length": "5",
+                "description": "Housing Weight replicate 10",
+                "var_codes": {
+                    "-9999..09999": "Integer weight of housing unit"
+                }
+            },
+            "WGTP11": {
+                "length": "5",
+                "description": "Housing Weight replicate 11",
+                "var_codes": {
+                    "-9999..09999": "Integer weight of housing unit"
+                }
+            },
+            "WGTP54": {
+                "length": "5",
+                "description": "Housing Weight replicate 54",
+                "var_codes": {
+                    "-9999..09999": "Integer weight of housing unit"
+                }
+            },
+            "WGTP80": {
+                "length": "5",
+                "description": "Housing Weight replicate 80",
+                "var_codes": {
+                    "-9999..09999": "Integer weight of housing unit"
+                }
+            }
+        },
+        "PERSON RECORD": {
+            "RT": {
+                "length": "1",
+                "description": "Record Type",
+                "var_codes": {
+                    "P": "Person Record"
+                }
+            },
+            "PUMA": {
+                "length": "5",
+                "description": "Public use microdata area code (PUMA) based on 2010 Census definition",
+                "var_codes": {
+                    "00100..70301": "Public use microdata area codes"
+                },
+                "notes": [
+                    "Note: Public use microdata areas (PUMAs) designate areas of 100,000 or more population.  Use with ST for unique code."
+                ]
+            },
+            "DEAR": {
+                "length": "1",
+                "description": "Hearing difficulty",
+                "var_codes": {
+                    "1": "Yes",
+                    "2": "No"
+                }
+            },
+            "MARHYP": {
+                "length": "4",
+                "description": "Year last married",
+                "var_codes": {
+                    "bbbb": "N/A (age less than 15 years; never married)",
+                    "1932": "1932 or earlier (Bottom-coded)",
+                    "1933": "1933",
+                    "2010": "2010",
+                    "2011": "2011",
+                    "2012": "2012",
+                    "2013": "2013"
+                }
+            },
+            "NWAB": {
+                "length": "1",
+                "notes": [
+                    "(UNEDITED - See \"Employment Status Recode\" (ESR))",
+                    "Note: NWAB has a note in the variable name line and after the entry.",
+                    "Note: NWAB now has 2 notes after the entry."
+                ],
+                "description": "Temporary absence from work",
+                "var_codes": {
+                    "b": "N/A (less than 16 years old/at work/on layoff)",
+                    "1": "Yes",
+                    "2": "No",
+                    "3": "Did not report"
+                }
+            },
+            "PWGTP80": {
+                "length": "5",
+                "description": "Person's Weight replicate 80",
+                "var_codes": {
+                    "-9999..09999": "Integer weight of person"
+                }
+            }
+        }
+    },
+    "notes": [
+        "Note for both Industry and Occupation lists in Data Dictionary:",
+        "*  In cases where the SOC occupation code ends in X(s) or Y(s), two or more",
+        "   SOC occupation codes were aggregated to correspond to a specific Census",
+        "   occupation code. In these cases, the Census occupation description is used",
+        "   for the SOC occupation title.",
+        "** These codes are pseudo codes developed by the Census Bureau and are not",
+        "   official or equivalent NAICS or SOC codes."
+    ]
+}
