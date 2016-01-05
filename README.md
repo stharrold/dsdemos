@@ -2,6 +2,8 @@
 
 Source code for examples from [Data Science Demos](https://stharrold.github.io).
 
+Version numbers follow [Semantic Versioning v2.0.0](http://semver.org/spec/v2.0.0.html).
+
 ## Installation
 
 Requires Python 3x. Clone the repository from GitHub then import `stharrold.github.io/content/static/dsdemos/dsdemos` as a local package:
