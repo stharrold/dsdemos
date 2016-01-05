@@ -8,7 +8,7 @@ Version numbers follow [Semantic Versioning v2.0.0](http://semver.org/spec/v2.0.
 
 Requires Python 3x.
 
-Clone the repository, add `dsdemos/dsdemos` to the module search path, then import:
+Clone the repository, add `dsdemos` to the module search path, then import:
 ```
 $ git clone https://github.com/stharrold/dsdemos.git
 $ python
