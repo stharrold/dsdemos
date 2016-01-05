@@ -6,12 +6,15 @@ Version numbers follow [Semantic Versioning v2.0.0](http://semver.org/spec/v2.0.
 
 ## Installation
 
-Requires Python 3x. Clone the repository from GitHub then import `stharrold.github.io/content/static/dsdemos/dsdemos` as a local package:
+Requires Python 3x.
+
+Clone the repository, add `dsdemos/dsdemos` to the module search path, then import:
 ```
 $ git clone https://github.com/stharrold/dsdemos.git
 $ python
+>>> import os
 >>> import sys
->>> sys.path.insert(0, r'dsdemos')
+>>> sys.path.insert(0, os.path.join(os.path.curdir, r'dsdemos'))
 >>> import dsdemos as dsd
 ```
 
