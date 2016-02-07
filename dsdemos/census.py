@@ -62,9 +62,6 @@ def parse_pumsdatadict(path:str) -> collections.OrderedDict:
     
     """
     # Check arguments.
-    utils.check_arguments(
-        antns=parse_pumsdatadict.__annotations__,
-        lcls=locals())
     if not os.path.exists(path):
         raise FileNotFoundError(
             "Path does not exist:\n{path}".format(path=path))

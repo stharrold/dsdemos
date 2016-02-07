@@ -8,7 +8,8 @@ r"""Top-level script.
 # Import standard packages.
 # Import installed packages.
 # Import local packages.
-from . import utils
+import dsdemos.census as census
+import dsdemos.utils as utils
 
 
 def main():

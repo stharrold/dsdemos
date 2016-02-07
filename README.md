@@ -18,11 +18,11 @@ $ python
 >>> import dsdemos as dsd
 ```
 
-To checkout a specific version (e.g. v0.0.3), checkout the version tag from within the repository:
+To checkout a specific version (e.g. v0.0.4), checkout the version tag from within the repository:
 ```
 $ git clone https://github.com/stharrold/dsdemos.git
 $ cd dsdemos
-$ git checkout tags/v0.0.3
+$ git checkout tags/v0.0.4
 $ cd ..
 $ python # proceed as above from 'add `dsdemos` to the module search path, then import'
 ```
