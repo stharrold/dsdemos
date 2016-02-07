@@ -13,4 +13,5 @@ import sys
 sys.path.insert(0, os.path.curdir)
 import dsdemos.main as main
 
-# TODO: test code/main.py
+
+# TODO: test dsdemos/main.py

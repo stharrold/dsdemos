@@ -11,6 +11,10 @@ References:
 # Import standard packages.
 # Import installed packages.
 # Import local packages.
+from . import census
 from . import main
 from . import utils
-from . import census
+
+
+# Follow Semantic Versioning v2.0.0 (http://semver.org/spec/v2.0.0.html)
+__version__ = '0.0.4'
