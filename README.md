@@ -2,7 +2,7 @@
 
 Source code for examples from [Data Science Demos](https://stharrold.github.io).
 
-Version numbers follow [Semantic Versioning v2.0.0](http://semver.org/spec/v2.0.0.html).
+Version numbers follow [Semantic Versioning v2.0.0](http://semver.org/spec/v2.0.0.html). (Version numbers have format 'N.N.N[-X]', where N are integer numbers and X is an optional label string. Git tags of versions have format 'vN.N.N[-X]'.)
 
 ## Installation
 
