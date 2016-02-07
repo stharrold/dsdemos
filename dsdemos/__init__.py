@@ -11,6 +11,6 @@ References:
 # Import standard packages.
 # Import installed packages.
 # Import local packages.
+from . import census
 from . import main
 from . import utils
-from . import census
