@@ -17,4 +17,4 @@ from . import utils
 
 
 # Follow Semantic Versioning v2.0.0 (http://semver.org/spec/v2.0.0.html)
-__version__ = '0.0.4'
+__version__ = '0.0.5'
