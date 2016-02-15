@@ -52,8 +52,8 @@ def calc_feature_importances(
             Default: `None`, then uses distributions Laplace, logistic,
             lognormal, Pareto, Poisson, Rayleigh, standard Cauchy,
             standard exponential, standard normal, uniform.
-        show_progress (bool, optional, False): Whether or not to print status.
-        show_plot (bool, optional, False): Whether or not to show summary plot
+        show_progress (bool, optional, False): Print status.
+        show_plot (bool, optional, False): Show summary plot
             of most significant feature importances.
         
     Returns:
@@ -163,7 +163,8 @@ def calc_score_pvalue(
             Default: `None`, then all set to 1.
         n_iter (int, optional, 20): Number of iterations for calculating scores.
         frac_true (float, optional, 0.2): Proportion of `n_iter` for which the
-            target values are not shuffled.
+            target values are not shuffled. Must be between 0 and 1.
+            See 'Raises'.
         size_sub (int, optional, None): Number of records in subset for
             cross-validating scores. Only enough records need to be used to
             approximate the variance in the data.
@@ -174,8 +175,8 @@ def calc_score_pvalue(
         replace (bool, optional, True): Sample records with replacement
             (bootstrap sampling). Default: `True`.
             Use `replace=True` to reduce overfitting the scores.
-        show_progress (bool, optional, False): Whether or not to print status.
-        show_plot (bool, optional, False): Whether or not to show summary plot
+        show_progress (bool, optional, False): Print status.
+        show_plot (bool, optional, False): Show summary plot
             of score significance.
     
     Returns:
@@ -184,6 +185,7 @@ def calc_score_pvalue(
     Raises:
         ValueError:
             * Raised if not `hasattr(estimator, 'fit')`
+            * Raised if not `0.0 < frac_true < 1.0`.
         RuntimeWarning:
             * Raised if not `size_sub <= len(df_features)`.
     
@@ -207,6 +209,11 @@ def calc_score_pvalue(
         raise ValueError(
             ("`estimator` must have the attribute 'fit'.\n" +
              "Required: hasattr(estimator, 'fit')"))
+    if not 0.0 < frac_true < 1.0:
+        raise ValueError(
+            ("`frac_true` must be between 0 and 1.\n" +
+             "Required: 0.0 < frac_true < 1.0\n" +
+             "Given: frac_true={frac_true}").format(frac_true=frac_true))
     if (size_sub is not None) and not (size_sub <= len(df_features)):
         warnings.warn(
             ("The number of records in the subset for calculating feature\n" +
@@ -220,16 +227,19 @@ def calc_score_pvalue(
         size_sub = min(int(1e4), size_data)
     # Score with/without shuffling the target values.
     inum_score_isshf = dict()
-    imod = int(n_iter*frac_true)
+    imod = round(n_iter*frac_true)
     if show_progress:
         print("Progress:", end=' ')
     for inum in range(0, n_iter):
         inum_score_isshf[inum] = dict()
         idxs_sub = np.random.choice(a=size_data, size=size_sub, replace=replace)
         if inum % imod == 0:
-            # 1 out of imod times without shuffling target values.
+            # Every 1 out of imod times, use true target values
+            # and show progress.
             inum_score_isshf[inum]['is_shf'] = False
             trg_vals = ds_target.values[idxs_sub]
+            if show_progress:
+                print("{frac:.0%}".format(frac=(inum+1)/n_iter), end=' ')
         else:
             # Otherwise with randomly permuted target values.
             inum_score_isshf[inum]['is_shf'] = True
@@ -250,8 +260,6 @@ def calc_score_pvalue(
             estimator.fit(X=ftrs_train, y=trg_train, sample_weight=pwt_train)
             inum_score_isshf[inum]['score'] = estimator.score(
                 X=ftrs_test, y=trg_test, sample_weight=pwt_test)
-        if show_progress:
-            print("{frac:.0%}".format(frac=(inum+1)/n_iter), end=' ')
     if show_progress:
         print('\n')
     df_scores = pd.DataFrame.from_dict(data=inum_score_isshf, orient='index')
