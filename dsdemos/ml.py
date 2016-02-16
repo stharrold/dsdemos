@@ -281,6 +281,10 @@ def calc_score_pvalue(
         plt.ylabel("Probability density")
         plt.legend(loc='upper left')
         plt.show()
+        print("Average model score with shuffling: {score:.3f}".format(
+                score=df_scores.loc[df_scores['is_shf'], 'score'].mean()))
+        print("Average model score without shuffling: {score:.3f}".format(
+                score=df_scores.loc[np.logical_not(df_scores['is_shf']), 'score'].mean()))
     # Calculate the distribution of differences in score means with/without
     # shuffling the target values.
     # Distribution of randomized differences in score means:
