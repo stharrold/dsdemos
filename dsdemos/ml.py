@@ -341,15 +341,16 @@ def calc_silhouette_scores(
     
     Args:
         df_features (pandas.DataFrame): Data frame of feature values.
-            Format: rows=records, cols=features. Features are scaled robustly
-            before fitting with k-means.
+            Format: rows=records, cols=features.
+            Note: `df_features` should aleady be scaled
+            (e.g. sklearn.preprocessing.RobustScaler)
         n_clusters_min (int, optional, 2): Minimum number of clusters.
         n_clusters_max (int, optional, 10): Maximum number of clusters.
         size_sub (int, optional, None): Number of records in subset for
-            calculating scores.
-            Default: `None`, then min(1K, all) records are used. See 'Raises'.
+            calculating scores. See 'Notes', 'Raises'.
+            Default: `None`, then min(1K, all) records are used.
         n_scores (int, optional, 10): Number of scores to calculate
-            for each cluster.
+            for each cluster. See 'Notes'.
         show_progress (bool, optional, False): Print status.
         show_plot (bool, optional, False): Show summary plot of scores.
         
@@ -357,8 +358,8 @@ def calc_silhouette_scores(
         nclusters_scores (list): List of tuples (n_clusters, scores)
             where n_clusters is the number of clusters and
             scores are the calclated silhouette scores.
-            Note: `sklearn.metrics.silhouette_score` may fail for particular
-            combinations of data and numbers of clusters. In these cases,
+            Note: `sklearn.metrics.silhouette_score` may fail if cluster sizes
+            are strongly imbalanced. In these cases,
             `len(scores) < n_scores` and the shape of `nclusters_scores` is
             irregular.
 
@@ -369,7 +370,6 @@ def calc_silhouette_scores(
             * Raised if not `size_sub <= len(df_features)`.
     
     See Also:
-        sklearn.preprocessing.RobustScaler,
         sklearn.cluster.MiniBatchKMeans,
         sklearn.metrics.silhouette_score
     
@@ -380,6 +380,14 @@ def calc_silhouette_scores(
             indicate overlapping clusters. Negative values generally indicate
             that a sample has been assigned to the wrong cluster,
             as a different cluster is more similar."
+        * For better score estimates, often it's more efficient to increase
+            n_scores rather than size_sub since
+            `sklearn.metrics.silhouette_score` creates a size_sub**2 matrix
+            in RAM.
+        * `sklearn.metrics.silhouette_score` may fail if cluster sizes
+            are strongly imbalanced. In these cases,
+            `len(scores) < n_scores` and the shape of `nclusters_scores` is
+            irregular.
     
     References:
         [^sklearn] http://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html
@@ -403,26 +411,23 @@ def calc_silhouette_scores(
              "Given: {lhs} <= {rhs}").format(
                  lhs=size_sub, rhs=len(df_features)),
              RuntimeWarning)
-    size_data = len(df_features)
     if size_sub is None:
-        size_sub = min(int(1e3), size_data)
+        size_sub = min(int(1e3), len(df_features))
     # Estimate silhouette scores for each number of clusters.
     if show_progress:
         print("Progress:", end=' ')
-    transformer_scaler = sk_pre.RobustScaler()
-    features_scaled = transformer_scaler.fit_transform(X=df_features)
     nclusters_scores = list()
     num_clusters = (n_clusters_max - n_clusters_min) + 1
     for n_clusters in range(n_clusters_min, n_clusters_max+1):
         transformer_kmeans = sk_cl.MiniBatchKMeans(n_clusters=n_clusters)
-        labels_pred = transformer_kmeans.fit_predict(X=features_scaled)
+        labels_pred = transformer_kmeans.fit_predict(X=df_features)
         scores = list()
         n_fails = 0
         while len(scores) < n_scores:
             try:
                 scores.append(
                     sk_met.silhouette_score(
-                        X=features_scaled,
+                        X=df_features,
                         labels=labels_pred,
                         sample_size=size_sub))
             except ValueError:
