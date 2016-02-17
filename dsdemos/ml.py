@@ -16,6 +16,7 @@ import scipy
 import seaborn as sns
 import sklearn.cross_validation as sk_cv
 import sklearn.cluster as sk_cl
+import sklearn.metrics as sk_met
 import sklearn.preprocessing as sk_pre
 # Import local packages.
 import dsdemos.utils as utils
@@ -332,9 +333,10 @@ def calc_score_pvalue(
     return pvalue
 
 
-def plot_silhouette_scores(
+def calc_silhouette_scores(
     df_features:pd.DataFrame, n_clusters_min:int=2, n_clusters_max:int=10,
-    size_sub:int=None, n_scores:int=10) -> list:
+    size_sub:int=None, n_scores:int=10,
+    show_progress:bool=False, show_plot:bool=False) -> list:
     r"""Plot silhouette scores for determining number of clusters in k-means.
     
     Args:
@@ -410,8 +412,8 @@ def plot_silhouette_scores(
     transformer_scaler = sk_pre.RobustScaler()
     features_scaled = transformer_scaler.fit_transform(X=df_features)
     nclusters_scores = list()
-    n_clusters_list = list(range(n_clusters_min, n_clusters_max+1))
-    for n_clusters in n_clusters_list:
+    num_clusters = (n_clusters_max - n_clusters_min) + 1
+    for n_clusters in range(n_clusters_min, n_clusters_max+1):
         transformer_kmeans = sk_cl.MiniBatchKMeans(n_clusters=n_clusters)
         labels_pred = transformer_kmeans.fit_predict(X=features_scaled)
         scores = list()
@@ -435,14 +437,15 @@ def plot_silhouette_scores(
         nclusters_scores.append((n_clusters, scores))
         if show_progress:
             print("{frac:.0%}".format(
-                    frac=(n_clusters-n_clusters_min+1)/len(n_clusters_list)),
+                    frac=(n_clusters-n_clusters_min+1)/num_clusters),
                   end=' ')
     if show_progress:
         print('\n')
     # Plot silhouette scores vs number of clusters.
     if show_plot:
         nclusters_pctls = np.asarray(
-            [np.percentile(tup[1], q=[5,50,95]) for tup in nclusters_pctls]) 
+            [np.append(tup[0], np.percentile(tup[1], q=[5,50,95]))
+             for tup in nclusters_scores])
         plt.plot(
             nclusters_pctls[:, 0], nclusters_pctls[:, 2],
             marker='.', color=sns.color_palette()[0],
@@ -456,5 +459,6 @@ def plot_silhouette_scores(
         plt.title("Silhouette score vs number of clusters")
         plt.xlabel("Number of clusters")
         plt.ylabel("Silhouette score")
+        plt.legend(loc='upper left')
         plt.show()
     return nclusters_scores
