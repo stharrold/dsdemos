@@ -15,6 +15,8 @@ import pandas as pd
 import scipy
 import seaborn as sns
 import sklearn.cross_validation as sk_cv
+import sklearn.cluster as sk_cl
+import sklearn.preprocessing as sk_pre
 # Import local packages.
 import dsdemos.utils as utils
 
@@ -168,8 +170,7 @@ def calc_score_pvalue(
         size_sub (int, optional, None): Number of records in subset for
             cross-validating scores. Only enough records need to be used to
             approximate the variance in the data.
-            Default: `None`, then min(10K, all) records are used.
-            See 'Notes', 'Raises'.
+            Default: `None`, then min(10K, all) records are used. See 'Raises'.
         frac_test (float, optional, 0.2): Proportion of `size_sub` for which to
             test the predicted target values and calculate each score.
         replace (bool, optional, True): Sample records with replacement
@@ -198,8 +199,7 @@ def calc_score_pvalue(
             not the target values were themselves shuffled.
     
     References:
-        [^kfold]: http://scikit-learn.org/stable/modules/generated/
-            sklearn.cross_validation.KFold.html
+        [^sklearn]: http://scikit-learn.org/stable/modules/generated/sklearn.cross_validation.KFold.html
 
     """
     # TODO: Replace show_progress and warnings.warn with logger.[debug,warn]
@@ -330,3 +330,131 @@ def calc_score_pvalue(
              "as great as {diff:.2f} is {pvalue:.1f}%.").format(
                  diff=mean_score_diff, pvalue=pvalue))
     return pvalue
+
+
+def plot_silhouette_scores(
+    df_features:pd.DataFrame, n_clusters_min:int=2, n_clusters_max:int=10,
+    size_sub:int=None, n_scores:int=10) -> list:
+    r"""Plot silhouette scores for determining number of clusters in k-means.
+    
+    Args:
+        df_features (pandas.DataFrame): Data frame of feature values.
+            Format: rows=records, cols=features. Features are scaled robustly
+            before fitting with k-means.
+        n_clusters_min (int, optional, 2): Minimum number of clusters.
+        n_clusters_max (int, optional, 10): Maximum number of clusters.
+        size_sub (int, optional, None): Number of records in subset for
+            calculating scores.
+            Default: `None`, then min(1K, all) records are used. See 'Raises'.
+        n_scores (int, optional, 10): Number of scores to calculate
+            for each cluster.
+        show_progress (bool, optional, False): Print status.
+        show_plot (bool, optional, False): Show summary plot of scores.
+        
+    Returns:
+        nclusters_scores (list): List of tuples (n_clusters, scores)
+            where n_clusters is the number of clusters and
+            scores are the calclated silhouette scores.
+            Note: `sklearn.metrics.silhouette_score` may fail for particular
+            combinations of data and numbers of clusters. In these cases,
+            `len(scores) < n_scores` and the shape of `nclusters_scores` is
+            irregular.
+
+    Raises:
+        ValueError:
+            * Raised if not `2 <= n_clusters_min < n_clusters_max`.
+        RuntimeWarning:
+            * Raised if not `size_sub <= len(df_features)`.
+    
+    See Also:
+        sklearn.preprocessing.RobustScaler,
+        sklearn.cluster.MiniBatchKMeans,
+        sklearn.metrics.silhouette_score
+    
+    Notes:
+        * Silhouette scores are a measure comparing the relative size and
+            proximity of clusters. Interpretation from [^sklearn]:
+            "The best value is 1 and the worst value is -1. Values near 0
+            indicate overlapping clusters. Negative values generally indicate
+            that a sample has been assigned to the wrong cluster,
+            as a different cluster is more similar."
+    
+    References:
+        [^sklearn] http://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html
+    
+    """
+    # TODO: Replace show_progress and warnings.warn with logger.[debug,warn]
+    #     https://github.com/stharrold/stharrold.github.io/issues/58
+    # Check arguments.
+    if not (2 <= n_clusters_min < n_clusters_max):
+        raise ValueError(
+            ("The number of clusters is not valid.\n" +
+             "Required: 2 <= n_clusters_min < n_clusters_max\n" +
+             "Given: 2 <= {nmin} < {nmax}").format(
+                 nmin=n_clusters_min, nmax=n_clusters_max))
+    if (size_sub is not None) and not (size_sub <= len(df_features)):
+        warnings.warn(
+            ("The number of records in the subset for calculating the\n" +
+             "silhouette scores is larger than the number of records\n" +
+             "in the data.\n" +
+             "Suggested: size_sub <= len(df_features)\n" +
+             "Given: {lhs} <= {rhs}").format(
+                 lhs=size_sub, rhs=len(df_features)),
+             RuntimeWarning)
+    size_data = len(df_features)
+    if size_sub is None:
+        size_sub = min(int(1e3), size_data)
+    # Estimate silhouette scores for each number of clusters.
+    if show_progress:
+        print("Progress:", end=' ')
+    transformer_scaler = sk_pre.RobustScaler()
+    features_scaled = transformer_scaler.fit_transform(X=df_features)
+    nclusters_scores = list()
+    n_clusters_list = list(range(n_clusters_min, n_clusters_max+1))
+    for n_clusters in n_clusters_list:
+        transformer_kmeans = sk_cl.MiniBatchKMeans(n_clusters=n_clusters)
+        labels_pred = transformer_kmeans.fit_predict(X=features_scaled)
+        scores = list()
+        n_fails = 0
+        while len(scores) < n_scores:
+            try:
+                scores.append(
+                    sk_met.silhouette_score(
+                        X=features_scaled,
+                        labels=labels_pred,
+                        sample_size=size_sub))
+            except ValueError:
+                n_fails += 1
+            if n_fails > 10*n_scores:
+                warnings.warn(
+                    ("`sklearn.silhouette_score` failed for given data with:\n" +
+                     "n_clusters = {ncl}\n" +
+                     "size_sub = {size}\n").format(
+                         ncl=n_clusters, size=size_sub))
+                break
+        nclusters_scores.append((n_clusters, scores))
+        if show_progress:
+            print("{frac:.0%}".format(
+                    frac=(n_clusters-n_clusters_min+1)/len(n_clusters_list)),
+                  end=' ')
+    if show_progress:
+        print('\n')
+    # Plot silhouette scores vs number of clusters.
+    if show_plot:
+        nclusters_pctls = np.asarray(
+            [np.percentile(tup[1], q=[5,50,95]) for tup in nclusters_pctls]) 
+        plt.plot(
+            nclusters_pctls[:, 0], nclusters_pctls[:, 2],
+            marker='.', color=sns.color_palette()[0],
+            label='50th pctl score')
+        plt.fill_between(
+            nclusters_pctls[:, 0],
+            y1=nclusters_pctls[:, 1],
+            y2=nclusters_pctls[:, 3],
+            alpha=0.5, color=sns.color_palette()[0],
+            label='5-95th pctls of scores')
+        plt.title("Silhouette score vs number of clusters")
+        plt.xlabel("Number of clusters")
+        plt.ylabel("Silhouette score")
+        plt.show()
+    return nclusters_scores
