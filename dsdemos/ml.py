@@ -7,6 +7,7 @@ r"""Utilities for machine learning.
 
 # Import standard packages.
 import collections
+import itertools
 import warnings
 # Import installed packages.
 import matplotlib.pyplot as plt
@@ -20,6 +21,284 @@ import sklearn.metrics as sk_met
 import sklearn.preprocessing as sk_pre
 # Import local packages.
 import dsdemos.utils as utils
+
+
+class BoxCox:
+    r"""Pipeline step: Keep only positive target values and transform
+    unweighted values to be normally distributed using a Box-Cox power
+    transformation.
+    
+    Args:
+        boxcox_lambda (float, optional, None): Optimal transformation parameter,
+            e.g. found by `scipy.stats.boxcox_normmax`. Compute using `fit`
+            method.
+    
+    Notes:
+        * Box-Cox transformation:[^wiki]
+            y = (x^lam - 1)/lam    , if lam != 0
+            y = ln(x)              , if lam = 0
+        * Inverse Box-Cox transformation:
+            x = (y*lam + 1)^(1/lam), if lam != 0
+            x = exp(y)             , if lam = 0
+    
+    Examples:
+        * Example fit, transform, and inverse transform:
+            Note: Only records with target values > 0 were kept by the
+                transform. The inverse transformation does not replace the
+                dropped records.
+            ```
+            >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
+            >>> boxcox = BoxCox()
+            >>> boxcox.fit(ftrs, trg, wt)
+            >>> (ftrs_tform, trg_tform, wt_tform) =\
+            ... boxcox.transform(ftrs, trg, wt)
+            >>> (ftrs_itform, trg_itform, wt_itform) =\
+            ... boxcox.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> len(ftrs_itform) <= len(ftrs) # dropped records
+            True
+            >>> len(trg_itform) <= len(trg) # dropped records
+            True
+            >>> len(wt_itform) <= len(wt) # dropped records
+            True
+            ```
+
+    See Also:
+        sklearn.pipeline.Pipeline
+
+    References:
+        [^wiki]: https://en.wikipedia.org/wiki/Power_transform
+
+    """
+    
+    
+    def __init__(self, boxcox_lambda:float=None) -> None:
+        r"""Private method to instantiate class. See `BoxCox.__doc__`
+        for arguments.
+        
+        """
+        self.boxcox_lambda = boxcox_lambda
+        return None
+
+
+    def fit(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, **kwargs) -> None:
+        r"""Fit the optimal Box-Cox power transformation parameter using
+        only positive target values.
+
+        Args:
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features. See 'Notes'.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+            **kwargs (dict): Optional keyword arguments for
+                `scipy.stats.boxcox_normmax`
+                Example: {brack=(-2.0, 2.0), method='pearsonr'}
+            
+        Returns:
+            None
+        
+        Attributes:
+            boxcox_lambda (float): Set by calling `fit`. Optimal transformation
+                parameter found by `scipy.stats.boxcox_normmax`. See 'Notes'.
+            
+        See Also:
+            scipy.stats.boxcox_normmax
+        
+        Notes:
+            * `df_features` is not used in `fit`. The argument is passed to
+                maintain a consistent API for `sklearn.pipeline.Pipeline`.
+            * If `kwargs['method']='all'`, then `boxcox_lambda` is only assigned
+                to the first parameter returned by `scipy.stats.boxcox_normmax`.
+
+        """
+        # Check arguments.
+        # Copy data frames/series to avoid modifying input data.
+        # df_features not used.
+        ds_target = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight = ds_weight.copy()
+        # Keep only positive target values.
+        tfmask = ds_target > 0
+        ds_target = ds_target.loc[tfmask]
+        if ds_weight is not None:
+            ds_weight = ds_weight.loc[tfmask]
+        # Unweight the target values and compute transformation parameter.
+        if ds_weight is not None:
+            target_vals = list()
+            for tup in zip(ds_target.values, ds_weight.astype(int)):
+                target_vals += itertools.repeat(*tup)
+            target_vals = np.asarray(target_vals)
+        else:
+            target_vals = ds_target.values
+        self.boxcox_lambda = scipy.stats.boxcox_normmax(target_vals, **kwargs)
+        if hasattr(self.boxcox_lambda, '__iter__'):
+            self.boxcox_lambda = self.boxcox_lambda[0]
+        return None
+
+
+    def transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, boxcox_lambda:float=None) -> tuple:
+        r"""Transform data frames/series by keeping only records with positive
+        target values and transforming unweighted target values to be normally
+        distributed using a Box-Cox power transformation.
+        
+        Args:
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+            boxcox_lambda (float, optional, None): If default (`None`), must
+                be set by calling `fit`. Optimal transformation parameter.
+                See 'Raises'.
+        
+        Returns:
+            df_features_tform (pandas.DataFrame): Data frame of feature values
+                for records with positive target values.
+                Format: rows=records, col=features.
+            ds_target_tform (pandas.Series): Data series of positive target
+                values transformed to be normally distributed when unweighted.
+                Format: rows=records, col=target.
+            ds_weight_tform (pandas.Series, optional, None): Data series of
+                record weights for records with positive target values.
+                Format: rows=records, col=weight.
+        
+        Raises:
+            ValueError: Raised if `boxcox_lambda` is undefined,
+                i.e. if `boxcox_lambda is None` and `fit` has not already
+                been called.
+        
+        See Also:
+            scipy.stats.boxcox
+        
+        """
+        # Check arguments.
+        if boxcox_lambda is not None:
+            self.boxcox_lambda = boxcox_lambda
+        if self.boxcox_lambda is None:
+            raise ValueError(
+                "`boxcox_lambda` is undefined. Assign `boxcox_lambda`\n" +
+                "or call `fit`.\n")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_tform = df_features.copy()
+        ds_target_tform = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight_tform = ds_weight.copy()
+        else:
+            ds_weight_tform = ds_weight
+        # Keep only positive target values.
+        tfmask = ds_target_tform > 0
+        df_features_tform = df_features_tform.loc[tfmask]
+        ds_target_tform = ds_target_tform.loc[tfmask]
+        if ds_weight_tform is not None:
+            ds_weight_tform = ds_weight_tform.loc[tfmask]
+        # Transform the target values.
+        ds_target_tform = ds_target_tform.apply(
+            lambda x: scipy.stats.boxcox(x, lmbda=self.boxcox_lambda))
+        return (df_features_tform, ds_target_tform, ds_weight_tform)
+
+
+    def _inverse_boxcox(y_vals, lmbda:float):
+        r"""Pseudo-private method to invert `scipy.stats.boxcox`.
+        
+        Args:
+            y_vals (float or numpy.ndarray): Box-Cox transformed values to
+                inverse transform.
+            lmbda (float): Box-Cox transformation parameter.
+        
+        Returns:
+            x_vals (float or numpy.ndarray): Inverse transformed values with
+                same shape as `y_vals`.
+        
+        See Also:
+            scipy.stats.boxcox
+        
+        """
+        y_vals = np.asarray(y_vals)
+        if lmbda == 0:
+            x_vals = np.exp(y_vals)
+        else:
+            x_vals = (y_vals*lmbda + 1)**(1/lmbda)
+        return x_vals
+
+
+    def inverse_transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, boxcox_lambda:float=None) -> tuple:
+        r"""Inverse transform target values from normal distribution to original
+        distribution by inverted Box-Cox power transformation. See 'Notes'.
+        
+        Args:
+            df_features (pandas.DataFrame): Data frame of feature values
+                for records with positive original target values.
+                Format: rows=records, col=features. See 'Notes'.
+            ds_target (pandas.Series): Data series of positive target values
+                normally distributed when unweighted.
+                Format: rows=records, col=target. See 'Raises'.
+            ds_weight (pandas.Series, optional, None): Data series of
+                record weights for records with positive original target values.
+                Format: rows=records, col=weight. See 'Notes'.
+            boxcox_lambda (float, optional, None): If default (`None`), must
+                be set by calling `fit`. Optimal transformation parameter.
+                See 'Raises'.
+        
+        Returns:
+            df_features_itform (pandas.DataFrame): Data frame of feature values
+                for records with positive original target values.
+                Format: rows=records, col=features. See 'Notes'.
+            ds_target_itform (pandas.Series): Data series of positive target
+                values inverse transformed to be distributed like original
+                when unweighted. Format: rows=records, col=target.
+            ds_weight_itform (pandas.Series, optional, None): Data series of
+                record weights for records with positive original target values.
+                Format: rows=records, col=weight. See 'Notes'.
+        
+        Raises:
+            ValueError:
+                * Raised if any target values are <= 0,
+                    i.e. if `not numpy.all(ds_target > 0)`.
+                * Raised if `boxcox_lambda` is undefined,
+                    i.e. if `boxcox_lambda is None` and `fit` has not already
+                    been called.
+        
+        See Also:
+            scipy.stats.boxcox
+        
+        Notes:
+            * Only records with target values > 0 were kept by `transform`.
+                The `inverse_transform` does not replace the dropped records.
+            * `df_features` and `ds_weight` are not used in `inverse_transform`.
+                The arguments are passed to maintain a consistent API for
+                `sklearn.pipeline.Pipeline`.
+
+        """
+        # Check arguments.
+        if not np.all(ds_target > 0):
+            raise ValueError(
+                "All target values must be > 0.\n" +
+                "Required: `numpy.all(ds_target > 0)`")
+        if boxcox_lambda is not None:
+            self.boxcox_lambda = boxcox_lambda
+        if self.boxcox_lambda is None:
+            raise ValueError(
+                "`boxcox_lambda` is undefined. Assign `boxcox_lambda`\n" +
+                "or call `fit`.\n")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_itform = df_features.copy()
+        ds_target_itform = ds_target.copy()
+        if ds_weight_itform is not None:
+            ds_weight_itform = ds_weight.copy()
+        else:
+            ds_weight_itform = ds_weight
+        # Inverse transform the target values.
+        ds_target_itform = ds_target_itform.apply(
+            lambda y_val: self._inverse_boxcox(y_val, lmbda=self.boxcox_lambda))
+        return (df_features_itform, ds_target_itform, ds_weight_itform)
 
 
 def calc_feature_importances(
@@ -56,8 +335,8 @@ def calc_feature_importances(
             lognormal, Pareto, Poisson, Rayleigh, standard Cauchy,
             standard exponential, standard normal, uniform.
         show_progress (bool, optional, False): Print status.
-        show_plot (bool, optional, False): Show summary plot
-            of most significant feature importances.
+        show_plot (bool, optional, False): Show summary plot of max top 20 
+            significant feature importances and the random importance.
         
     Returns:
         df_importances (pandas.DataFrame): Data frame of feature importances.
@@ -128,20 +407,21 @@ def calc_feature_importances(
             print("{frac:.0%}".format(frac=(inum+1)/len(dists)), end=' ')
     if show_progress:
         print('\n')
-    # Return the feature importances and plot most important features.
-    # Plotted features have (average importance) > max(random importance)
+    # Return the feature importances and plot the 20 most important features.
     df_importances = pd.DataFrame.from_dict(ftrs_imps)
     if show_plot:
-        ds_ftrs_imps_mean = df_importances.mean()
-        tfmask = (ds_ftrs_imps_mean > df_importances['random'].max())
-        ds_ftrs_top = ds_ftrs_imps_mean[tfmask].sort_values(ascending=False)
-        idxs_ftrs_plot = ds_ftrs_top.index.append(pd.Index(['random']))
+        ds_ftrs_imps_mean = df_importances.mean().sort_values(ascending=False)
+        tfmask = (ds_ftrs_imps_mean > df_importances['random'].mean())
+        ftrs_plot = list(ds_ftrs_imps_mean[tfmask].index[:20])+['random']
         sns.barplot(
-            data=df_importances[idxs_ftrs_plot], order=idxs_ftrs_plot, ci=95,
+            data=df_importances[ftrs_plot], order=ftrs_plot, ci=95,
             orient='h', color=sns.color_palette()[0])
-        plt.title("Feature column name vs importance score")
-        plt.xlabel("Importance score\n" +
-                   "(normalized reduction of loss function)")
+        plt.title(
+            ("Feature column name vs top 20 importance scores\n" +
+             "with 95% confidence interval and benchmark randomized scores"))
+        plt.xlabel(
+            ("Importance score\n" +
+             "(normalized reduction of loss function)"))
         plt.ylabel("Feature column name")
         plt.show()
     return df_importances
@@ -464,6 +744,57 @@ def calc_silhouette_scores(
         plt.title("Silhouette score vs number of clusters")
         plt.xlabel("Number of clusters")
         plt.ylabel("Silhouette score")
-        plt.legend(loc='upper left')
+        plt.legend(loc='lower left')
         plt.show()
     return nclusters_scores
+
+
+def plot_actual_vs_predicted(
+    y_true:np.ndarray, y_pred:np.ndarray, loglog:bool=False, xylims:tuple=None,
+    path:str=None) -> None:
+    r"""Plot actual vs predicted values.
+    
+    Args:
+        y_true (numpy.ndarray): The true target values.
+        y_pred (numpy.ndarray): The predicted target values.
+        loglog (bool, optional, False): Log scale for both x and y axes.
+        xylims (tuple, optional, None): Limits for x and y axes.
+            Default: None, then set to (min, max) of `y_pred`.
+        path (str, optional, None): Path to save figure.
+    
+    Returns:
+        None
+    
+    """
+    # TODO: Plot binned percentiles; Q-Q plot
+    # TODO: Z1,Z2 gaussianity measures
+    # Check input.
+    # TODO: limit number of points to plot
+    # TODO: Use hexbins for density.
+    #   sns.jointplot(
+    #       x=y_pred, y=y_true, kind='hex', stat_func=None,
+    #       label='(predicted, actual)')
+    plt.title("Actual vs predicted values")
+    if loglog:
+        plot_func = plt.loglog
+        y_pred_extrema = (min(y_pred[y_pred > 0]), max(y_pred))
+    else:
+        plot_func = plt.plot
+        y_pred_extrema = (min(y_pred), max(y_pred))
+    if xylims is not None:
+        y_pred_extrema = xylims
+    plot_func(
+        y_pred, y_true, color=sns.color_palette()[0],
+        marker='.', linestyle='', alpha=0.1, label='(predicted, actual)')
+    plot_func(
+        y_pred_extrema, y_pred_extrema, color=sns.color_palette()[1],
+        marker='', linestyle='-', linewidth=1, label='(predicted, predicted)')
+    plt.xlabel("Predicted values")
+    plt.xlim(y_pred_extrema)
+    plt.ylabel("Actual values")
+    plt.ylim(y_pred_extrema)
+    plt.legend(loc='upper left', title='values')
+    if path is not None:
+        plt.savefig(path)
+    plt.show()
+    return None

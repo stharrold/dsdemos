@@ -14,6 +14,9 @@ sys.path.insert(0, os.path.curdir)
 import dsdemos.ml as ml
 
 
+# TODO: def test_fit_boxcox
+#     Test with method=all
+#     Test with/without weights
 # TODO: def test_calc_feature_importances
 #     Use iris data set, set random seed to 0
 #     Test with/without weights
@@ -24,3 +27,4 @@ import dsdemos.ml as ml
 #     plot_permutation_test_for_classification.html
 # TODO: def test_plot_silhouette_scores
 #     compare to http://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+# TODO: def test_plot_actual_vs_predicted

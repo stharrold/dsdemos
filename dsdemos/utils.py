@@ -10,4 +10,17 @@ r"""General purpose utilities.
 # Import local packages.
 
 
-# TODO: For general-purpose utilities.
+class Container:
+    """Empty class to contain dynamically allocated attributes.
+    Use to minimize namespace clutter from variable names.
+    Use for heirarchical data storage like a `dict`.
+    
+    Example:
+        ```
+        data = Container()
+        data.features = features
+        data.target = target
+        ```
+
+    """
+    pass
