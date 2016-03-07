@@ -27,12 +27,7 @@ class BoxCox:
     r"""Pipeline step: Keep only positive target values and transform
     unweighted values to be normally distributed using a Box-Cox power
     transformation.
-    
-    Args:
-        boxcox_lambda (float, optional, None): Optimal transformation parameter,
-            e.g. found by `scipy.stats.boxcox_normmax`. Compute using `fit`
-            method.
-    
+
     Notes:
         * Box-Cox transformation:[^wiki]
             y = (x^lam - 1)/lam    , if lam != 0
@@ -72,8 +67,19 @@ class BoxCox:
     
     
     def __init__(self, boxcox_lambda:float=None) -> None:
-        r"""Private method to instantiate class. See `BoxCox.__doc__`
-        for arguments.
+        r"""Private method to BoxCox class.
+        
+        Args:
+            self (implicit)
+            boxcox_lambda (float, optional, None): Optimal transformation
+                parameter, e.g. found by `scipy.stats.boxcox_normmax`.
+                Compute using `fit` method.
+            
+        Returns:
+            None
+        
+        See Also:
+            BoxCox.fit
         
         """
         self.boxcox_lambda = boxcox_lambda
@@ -87,6 +93,7 @@ class BoxCox:
         only positive target values.
 
         Args:
+            self (implicit)
             df_features (pandas.DataFrame): Data frame of feature values.
                 Format: rows=records, col=features. See 'Notes'.
             ds_target (pandas.Series): Data series of target values.
@@ -105,7 +112,7 @@ class BoxCox:
                 parameter found by `scipy.stats.boxcox_normmax`. See 'Notes'.
             
         See Also:
-            scipy.stats.boxcox_normmax
+            scipy.stats.boxcox_normmax, BoxCox.transform
         
         Notes:
             * `df_features` is not used in `fit`. The argument is passed to
@@ -147,6 +154,7 @@ class BoxCox:
         distributed using a Box-Cox power transformation.
         
         Args:
+            self (implicit)
             df_features (pandas.DataFrame): Data frame of feature values.
                 Format: rows=records, col=features.
             ds_target (pandas.Series): Data series of target values.
@@ -154,8 +162,8 @@ class BoxCox:
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
             boxcox_lambda (float, optional, None): If default (`None`), must
-                be set by calling `fit`. Optimal transformation parameter.
-                See 'Raises'.
+                be previously set by calling `fit`. Optimal transformation
+                parameter. See 'Raises'.
         
         Returns:
             df_features_tform (pandas.DataFrame): Data frame of feature values
@@ -174,7 +182,7 @@ class BoxCox:
                 been called.
         
         See Also:
-            scipy.stats.boxcox
+            scipy.stats.boxcox, BoxCox.inverse_transform
         
         """
         # Check arguments.
@@ -199,14 +207,15 @@ class BoxCox:
             ds_weight_tform = ds_weight_tform.loc[tfmask]
         # Transform the target values.
         ds_target_tform = ds_target_tform.apply(
-            lambda x: scipy.stats.boxcox(x, lmbda=self.boxcox_lambda))
+            lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.boxcox_lambda))
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
 
-    def _inverse_boxcox(y_vals, lmbda:float):
+    def _inverse_boxcox(self, y_vals, lmbda:float):
         r"""Pseudo-private method to invert `scipy.stats.boxcox`.
         
         Args:
+            self (implicit)
             y_vals (float or numpy.ndarray): Box-Cox transformed values to
                 inverse transform.
             lmbda (float): Box-Cox transformation parameter.
@@ -216,7 +225,7 @@ class BoxCox:
                 same shape as `y_vals`.
         
         See Also:
-            scipy.stats.boxcox
+            scipy.stats.boxcox, BoxCox.inverse_transform
         
         """
         y_vals = np.asarray(y_vals)
@@ -267,7 +276,7 @@ class BoxCox:
                     been called.
         
         See Also:
-            scipy.stats.boxcox
+            scipy.stats.boxcox, BoxCox.transform
         
         Notes:
             * Only records with target values > 0 were kept by `transform`.
@@ -291,7 +300,7 @@ class BoxCox:
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
-        if ds_weight_itform is not None:
+        if ds_weight is not None:
             ds_weight_itform = ds_weight.copy()
         else:
             ds_weight_itform = ds_weight
