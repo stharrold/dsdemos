@@ -14,9 +14,11 @@ sys.path.insert(0, os.path.curdir)
 import dsdemos.ml as ml
 
 
-# TODO: def test_fit_boxcox
+# TODO: def test__unweight_target
+# TODO: def test_MapToNormalDist
 #     Test with method=all
 #     Test with/without weights
+#     Test docstring example
 # TODO: def test_calc_feature_importances
 #     Use iris data set, set random seed to 0
 #     Test with/without weights

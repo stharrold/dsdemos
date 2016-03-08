@@ -23,12 +23,33 @@ import sklearn.preprocessing as sk_pre
 import dsdemos.utils as utils
 
 
-class BoxCox:
+def _unweight_target() -> numpy.ndarray:
+    r"""Pseudo-private method to unweight target values.
+    
+    Args:
+        ds_target (pandas.Series): Data series of target values.
+            Format: rows=records, col=target.
+        ds_weight (pandas.Series, optional, None): Data series of record
+            weights. Format: rows=records, col=weight.
+
+    Returns:
+        TODO: resume here 2016-03-07    
+    
+    """
+            target_vals = list()
+            for tup in zip(ds_target.values, ds_weight.astype(int)):
+                target_vals += itertools.repeat(*tup)
+            target_vals = np.asarray(target_vals)
+
+
+class MapTargetToNormalDist:
     r"""Pipeline step: Keep only positive target values and transform
     unweighted values to be normally distributed using a Box-Cox power
     transformation.
 
     Notes:
+        * Motivation: A mean-squared-error loss function performs better when
+            the target value is normally distributed.
         * Box-Cox transformation:[^wiki]
             y = (x^lam - 1)/lam    , if lam != 0
             y = ln(x)              , if lam = 0
@@ -43,17 +64,18 @@ class BoxCox:
                 dropped records.
             ```
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> boxcox = BoxCox()
-            >>> boxcox.fit(ftrs, trg, wt)
+            >>> mapping = MapTargetToNormalDist()
+            >>> mapping.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
-            ... boxcox.transform(ftrs, trg, wt)
+            ... mapping.transform(ftrs, trg, wt)
             >>> (ftrs_itform, trg_itform, wt_itform) =\
-            ... boxcox.inverse_transform(ftrs_tform, trg_tform, wt_tform)
-            >>> len(ftrs_itform) <= len(ftrs) # dropped records
+            ... mapping.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> # Some records were dropped:
+            >>> len(ftrs_itform) <= len(ftrs)
             True
-            >>> len(trg_itform) <= len(trg) # dropped records
+            >>> len(trg_itform) <= len(trg)
             True
-            >>> len(wt_itform) <= len(wt) # dropped records
+            >>> len(wt_itform) <= len(wt)
             True
             ```
 
@@ -66,23 +88,23 @@ class BoxCox:
     """
     
     
-    def __init__(self, boxcox_lambda:float=None) -> None:
-        r"""Private method to BoxCox class.
+    def __init__(self, lmbda:float=None) -> None:
+        r"""Pseudo-private method to instantiate class.
         
         Args:
             self (implicit)
-            boxcox_lambda (float, optional, None): Optimal transformation
+            lmbda (float, optional, None): Optimal transformation
                 parameter, e.g. found by `scipy.stats.boxcox_normmax`.
-                Compute using `fit` method.
+                If default (`None`), compute using `fit` method.
             
         Returns:
             None
         
         See Also:
-            BoxCox.fit
+            self.fit
         
         """
-        self.boxcox_lambda = boxcox_lambda
+        self.lmbda = lmbda
         return None
 
 
@@ -108,16 +130,16 @@ class BoxCox:
             None
         
         Attributes:
-            boxcox_lambda (float): Set by calling `fit`. Optimal transformation
+            lmbda (float): Set by calling `fit`. Optimal transformation
                 parameter found by `scipy.stats.boxcox_normmax`. See 'Notes'.
             
         See Also:
-            scipy.stats.boxcox_normmax, BoxCox.transform
+            scipy.stats.boxcox_normmax, self.transform
         
         Notes:
             * `df_features` is not used in `fit`. The argument is passed to
                 maintain a consistent API for `sklearn.pipeline.Pipeline`.
-            * If `kwargs['method']='all'`, then `boxcox_lambda` is only assigned
+            * If `kwargs['method']='all'`, then `lmbda` is only assigned
                 to the first parameter returned by `scipy.stats.boxcox_normmax`.
 
         """
@@ -140,15 +162,15 @@ class BoxCox:
             target_vals = np.asarray(target_vals)
         else:
             target_vals = ds_target.values
-        self.boxcox_lambda = scipy.stats.boxcox_normmax(target_vals, **kwargs)
-        if hasattr(self.boxcox_lambda, '__iter__'):
-            self.boxcox_lambda = self.boxcox_lambda[0]
+        self.lmbda = scipy.stats.boxcox_normmax(target_vals, **kwargs)
+        if hasattr(self.lmbda, '__iter__'):
+            self.lmbda = self.lmbda[0]
         return None
 
 
     def transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, boxcox_lambda:float=None) -> tuple:
+        ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
         r"""Transform data frames/series by keeping only records with positive
         target values and transforming unweighted target values to be normally
         distributed using a Box-Cox power transformation.
@@ -161,7 +183,7 @@ class BoxCox:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            boxcox_lambda (float, optional, None): If default (`None`), must
+            lmbda (float, optional, None): If default (`None`), must
                 be previously set by calling `fit`. Optimal transformation
                 parameter. See 'Raises'.
         
@@ -177,20 +199,20 @@ class BoxCox:
                 Format: rows=records, col=weight.
         
         Raises:
-            ValueError: Raised if `boxcox_lambda` is undefined,
-                i.e. if `boxcox_lambda is None` and `fit` has not already
+            ValueError: Raised if `lmbda` is undefined,
+                i.e. if `lmbda is None` and `fit` has not already
                 been called.
         
         See Also:
-            scipy.stats.boxcox, BoxCox.inverse_transform
+            scipy.stats.boxcox, self.inverse_transform
         
         """
         # Check arguments.
-        if boxcox_lambda is not None:
-            self.boxcox_lambda = boxcox_lambda
-        if self.boxcox_lambda is None:
+        if lmbda is not None:
+            self.lmbda = lmbda
+        if self.lmbda is None:
             raise ValueError(
-                "`boxcox_lambda` is undefined. Assign `boxcox_lambda`\n" +
+                "`lmbda` is undefined. Assign `lmbda`\n" +
                 "or call `fit`.\n")
         # Copy data frames/series to avoid modifying input data.
         df_features_tform = df_features.copy()
@@ -207,7 +229,7 @@ class BoxCox:
             ds_weight_tform = ds_weight_tform.loc[tfmask]
         # Transform the target values.
         ds_target_tform = ds_target_tform.apply(
-            lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.boxcox_lambda))
+            lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.lmbda))
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
 
@@ -225,7 +247,7 @@ class BoxCox:
                 same shape as `y_vals`.
         
         See Also:
-            scipy.stats.boxcox, BoxCox.inverse_transform
+            scipy.stats.boxcox, self.inverse_transform
         
         """
         y_vals = np.asarray(y_vals)
@@ -238,7 +260,7 @@ class BoxCox:
 
     def inverse_transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, boxcox_lambda:float=None) -> tuple:
+        ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
         r"""Inverse transform target values from normal distribution to original
         distribution by inverted Box-Cox power transformation. See 'Notes'.
         
@@ -252,7 +274,7 @@ class BoxCox:
             ds_weight (pandas.Series, optional, None): Data series of
                 record weights for records with positive original target values.
                 Format: rows=records, col=weight. See 'Notes'.
-            boxcox_lambda (float, optional, None): If default (`None`), must
+            lmbda (float, optional, None): If default (`None`), must
                 be set by calling `fit`. Optimal transformation parameter.
                 See 'Raises'.
         
@@ -271,12 +293,12 @@ class BoxCox:
             ValueError:
                 * Raised if any target values are <= 0,
                     i.e. if `not numpy.all(ds_target > 0)`.
-                * Raised if `boxcox_lambda` is undefined,
-                    i.e. if `boxcox_lambda is None` and `fit` has not already
+                * Raised if `lmbda` is undefined,
+                    i.e. if `lmbda is None` and `fit` has not already
                     been called.
         
         See Also:
-            scipy.stats.boxcox, BoxCox.transform
+            scipy.stats.boxcox, self.transform
         
         Notes:
             * Only records with target values > 0 were kept by `transform`.
@@ -291,12 +313,11 @@ class BoxCox:
             raise ValueError(
                 "All target values must be > 0.\n" +
                 "Required: `numpy.all(ds_target > 0)`")
-        if boxcox_lambda is not None:
-            self.boxcox_lambda = boxcox_lambda
-        if self.boxcox_lambda is None:
+        if lmbda is not None:
+            self.lmbda = lmbda
+        if self.lmbda is None:
             raise ValueError(
-                "`boxcox_lambda` is undefined. Assign `boxcox_lambda`\n" +
-                "or call `fit`.\n")
+                "`lmbda` is undefined. Assign `lmbda` or call `fit`.")
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
@@ -306,8 +327,144 @@ class BoxCox:
             ds_weight_itform = ds_weight
         # Inverse transform the target values.
         ds_target_itform = ds_target_itform.apply(
-            lambda y_val: self._inverse_boxcox(y_val, lmbda=self.boxcox_lambda))
+            lambda y_val: self._inverse_boxcox(y_val, lmbda=self.lmbda))
         return (df_features_itform, ds_target_itform, ds_weight_itform)
+
+
+class MapUniqueToTargetMedian:
+    r"""Pipeline step: Create features from informative priors of
+    categorical features.
+    
+    Notes:
+        * Created (transformed/inverse transformed) features are appended as
+            columns. No columns are deleted.
+        * Motivation: This transformation includes an informative prior into
+            the feature, i.e. the feature's group-wise relationship to the
+            target. Splits in the transformed feature now correspond to splits
+            in the target value.
+
+    Examples:
+        * Example fit, transform, and inverse transform:
+            A categorical feature, 'cat_ftr', is transformed into 'cat_ftr_med',
+            then 'cat_ftr_med' is inverse transformed into 'cat_ftr_med_orig'.
+        * Created (transformed/inverse transformed) features are appended as
+            columns. No columns are deleted.
+            ```
+            >>> # 'cat_ftr' in `df_features` is a categorical feature
+            >>> cat_ftrs = ['ftr0', 'ftr1']
+            >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
+            >>> mapping = MapUniqueToTargetMedian(cat_ftrs)
+            >>> mapping.fit(ftrs, trg, wt)
+            >>> (ftrs_tform, trg_tform, wt_tform) =\
+            ... mapping.transform(ftrs, trg, wt)
+            >>> # 'cat_ftr_med' was added to `ftrs_tform`
+            >>> len(ftrs_tform.columns) > len(ftrs.columns)
+            True
+            >>> (ftrs_itform, trg_itform, wt_itform) =\
+            ... mapping.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> # 'cat_ftr_med_orig' was added to `ftrs_itform`
+            >>> len(ftrs_itform.columns) > len(ftrs_tform.columns)
+            True
+            >>> # 'cat_ftr' equals 'cat_ftr_med_orig'
+            >>> np.all(ftrs['cat_ftr'] == ftrs_itform['cat_ftr_med_orig'])
+            True
+            ```
+
+    See Also:
+        sklearn.pipeline.Pipeline
+    
+    """
+    
+    
+    def __init__(
+        self, cat_ftrs:list, ftr_orig_med:dict=None) -> None:
+        r"""Pseudo-private method to instantiate class.
+        
+        Args:
+            self (implicit)
+            cat_ftrs (list): List of column names that are categorical features.
+                Example: ['ftr0', 'ftr1']
+            ftr_orig_med (collections.defaultdict, optional, None): Nested dict
+                as mapping of categorical feature to original values, then from
+                original values to group's unweighted target median. Missing
+                keys map to population's unweighted target median.
+                If default (`None`), compute using `fit` method.
+                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+    
+        Returns:
+            None
+            
+        See Also:
+            self.fit
+        
+        """
+        self.cat_ftrs = cat_ftrs
+        self.ftr_orig_med = ftr_orig_med
+        return None
+    
+    
+    def fit(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, cat_ftrs:list=None) -> None:
+        r"""Fit the grouped categorical features to unweighted target medians.
+
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+            cat_ftrs (list, optional, None): List of column names that are
+                categorical features. If default (`None`), uses `self.cat_ftrs`
+                from initialization. If defined, replaces `self.cat_ftrs`.
+                Example: ['ftr0', 'ftr1']
+        
+        Returns:
+            None
+        
+        Attributes:
+            ftr_orig_med (collections.defaultdict): Nested dict as mapping
+                of categorical feature to original values, then from original
+                values to group's unweighted target median. Missing keys map to
+                population's unweighted target median.
+                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+        
+        Raises:
+            ValueError: Raised if some features in `cat_ftrs` are not
+                in `df_features.columns`.
+        
+        See Also:
+            self.transform
+        
+        Notes:
+            * For each categorical feature, group records by unique values and
+                map the group values to the unweighted target median for that
+                group.
+            * For new data, values that have not been seen before are mapped
+                to the target's unweighted median.
+
+        """
+        # Check arguments.
+        if cat_ftrs is not None:
+            self.cat_ftrs = cat_ftrs
+        else:
+            cat_ftrs = self.cat_ftrs
+        if not set(cat_ftrs).issubset(df_features.columns):
+            raise ValueError(
+                "Some features in `cat_ftrs` are not in `df_features.columns`\n" +
+                "Required: set(cat_ftrs).issubset(df_features.columns)")
+        # Map categorical features to original values,
+        # then from original values to group's unweighted target median.
+        if ds_weight is not None:
+            target_vals = list()
+            for tup in zip(ds_target.values
+        
+        self.ftr_orig_med = collections.defaultdict(lambda: ds_target.median())
+        for ftr in cat_ftrs:
+            ds_target.groupby(by=df_features[cat_ftrs].values).median()
+        return None
 
 
 def calc_feature_importances(
