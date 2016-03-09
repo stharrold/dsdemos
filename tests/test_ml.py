@@ -15,10 +15,15 @@ import dsdemos.ml as ml
 
 
 # TODO: def test__unweight_target
-# TODO: def test_MapToNormalDist
+# TODO: def test_MapUniqueToTargetMedian
+#     Test with/without weights
+#     Test docstring example
+#     Test raises
+# TODO: def test_MapTargetToNormalDist
 #     Test with method=all
 #     Test with/without weights
 #     Test docstring example
+#     Test raises
 # TODO: def test_calc_feature_importances
 #     Use iris data set, set random seed to 0
 #     Test with/without weights

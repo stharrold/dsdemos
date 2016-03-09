@@ -23,7 +23,8 @@ import sklearn.preprocessing as sk_pre
 import dsdemos.utils as utils
 
 
-def _unweight_target() -> numpy.ndarray:
+def _unweight_target(
+    ds_target:pd.Series, ds_weight:pd.Series) -> np.ndarray:
     r"""Pseudo-private method to unweight target values.
     
     Args:
@@ -33,14 +34,36 @@ def _unweight_target() -> numpy.ndarray:
             weights. Format: rows=records, col=weight.
 
     Returns:
-        TODO: resume here 2016-03-07    
+        target_vals (numpy.ndarray): 1D array of unweighted target values with
+            `len(target_vals) == ds_weight.sum()`.
+    
+    Raises:
+        ValueError: Raised if `ds_target` and `ds_weight` have different number
+            of records.
     
     """
-            target_vals = list()
-            for tup in zip(ds_target.values, ds_weight.astype(int)):
-                target_vals += itertools.repeat(*tup)
-            target_vals = np.asarray(target_vals)
-
+    # Check arguments.
+    if not len(ds_target) == len(ds_weight):
+        raise ValueError(
+            ("`ds_target` and `ds_weight` have different number of records.\n" +
+             "Required: len(ds_target) == len(ds_weight)\n" +
+             "Given: {lhs} == {rhs}").format(
+                 lhs=len(ds_target), rhs=len(ds_weight)))
+    # Unweight target values.
+    target_vals = list()
+    for tup in zip(ds_target.values, ds_weight.astype(int)):
+        target_vals += itertools.repeat(*tup)
+    target_vals = np.asarray(target_vals)
+    # Check returns.
+    if not len(target_vals) == ds_weight.sum():
+        raise AssertionError(
+            ("Program error. Number of target values does not match\n" +
+             "sum of weights.\n" +
+             "Required: len(target_vals) == ds_weight.sum()\n" +
+             "Given: {lhs} == {rhs}").format(
+                 lhs=len(target_vals), rhs=ds_weight.sum()))
+    return target_vals
+    
 
 class MapTargetToNormalDist:
     r"""Pipeline step: Keep only positive target values and transform
@@ -80,7 +103,7 @@ class MapTargetToNormalDist:
             ```
 
     See Also:
-        sklearn.pipeline.Pipeline
+        sklearn.pipeline.Pipeline, scipy.stats.boxcox
 
     References:
         [^wiki]: https://en.wikipedia.org/wiki/Power_transform
@@ -134,7 +157,7 @@ class MapTargetToNormalDist:
                 parameter found by `scipy.stats.boxcox_normmax`. See 'Notes'.
             
         See Also:
-            scipy.stats.boxcox_normmax, self.transform
+            self.transform, scipy.stats.boxcox_normmax
         
         Notes:
             * `df_features` is not used in `fit`. The argument is passed to
@@ -156,10 +179,8 @@ class MapTargetToNormalDist:
             ds_weight = ds_weight.loc[tfmask]
         # Unweight the target values and compute transformation parameter.
         if ds_weight is not None:
-            target_vals = list()
-            for tup in zip(ds_target.values, ds_weight.astype(int)):
-                target_vals += itertools.repeat(*tup)
-            target_vals = np.asarray(target_vals)
+            target_vals = _unweight_target(
+                ds_target=ds_target, ds_weight=ds_weight)
         else:
             target_vals = ds_target.values
         self.lmbda = scipy.stats.boxcox_normmax(target_vals, **kwargs)
@@ -173,7 +194,8 @@ class MapTargetToNormalDist:
         ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
         r"""Transform data frames/series by keeping only records with positive
         target values and transforming unweighted target values to be normally
-        distributed using a Box-Cox power transformation.
+        distributed using a Box-Cox power transformation. Suffix '_norm' is
+        added to `ds_target.name`.
         
         Args:
             self (implicit)
@@ -183,9 +205,9 @@ class MapTargetToNormalDist:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            lmbda (float, optional, None): If default (`None`), must
-                be previously set by calling `fit`. Optimal transformation
-                parameter. See 'Raises'.
+            lmbda (float, optional, None): Optimal transformation parameter.
+            If default (`None`), must be previously set by `fit` method.
+            See 'Raises'.
         
         Returns:
             df_features_tform (pandas.DataFrame): Data frame of feature values
@@ -204,7 +226,12 @@ class MapTargetToNormalDist:
                 been called.
         
         See Also:
-            scipy.stats.boxcox, self.inverse_transform
+            self.fit, self.inverse_transform
+        
+        Notes:
+            * Box-Cox transformation:[^wiki]
+                y = (x^lam - 1)/lam    , if lam != 0
+                y = ln(x)              , if lam = 0
         
         """
         # Check arguments.
@@ -230,6 +257,7 @@ class MapTargetToNormalDist:
         # Transform the target values.
         ds_target_tform = ds_target_tform.apply(
             lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.lmbda))
+        ds_target_tform.name += '_norm'
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
 
@@ -249,6 +277,11 @@ class MapTargetToNormalDist:
         See Also:
             scipy.stats.boxcox, self.inverse_transform
         
+        Notes:
+            * Inverse Box-Cox transformation:
+                x = (y*lam + 1)^(1/lam), if lam != 0
+                x = exp(y)             , if lam = 0
+        
         """
         y_vals = np.asarray(y_vals)
         if lmbda == 0:
@@ -262,9 +295,11 @@ class MapTargetToNormalDist:
         self, df_features:pd.DataFrame, ds_target:pd.Series,
         ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
         r"""Inverse transform target values from normal distribution to original
-        distribution by inverted Box-Cox power transformation. See 'Notes'.
+        distribution by inverted Box-Cox power transformation. Suffix '_orig' is
+        added to `ds_target.name`.
         
         Args:
+            self (implicit)
             df_features (pandas.DataFrame): Data frame of feature values
                 for records with positive original target values.
                 Format: rows=records, col=features. See 'Notes'.
@@ -274,20 +309,20 @@ class MapTargetToNormalDist:
             ds_weight (pandas.Series, optional, None): Data series of
                 record weights for records with positive original target values.
                 Format: rows=records, col=weight. See 'Notes'.
-            lmbda (float, optional, None): If default (`None`), must
-                be set by calling `fit`. Optimal transformation parameter.
+            lmbda (float, optional, None): Optimal transformation parameter.
+                If default (`None`), must be set by calling `fit`.
                 See 'Raises'.
         
         Returns:
             df_features_itform (pandas.DataFrame): Data frame of feature values
                 for records with positive original target values.
-                Format: rows=records, col=features. See 'Notes'.
+                Format: rows=records, col=features.
             ds_target_itform (pandas.Series): Data series of positive target
                 values inverse transformed to be distributed like original
                 when unweighted. Format: rows=records, col=target.
             ds_weight_itform (pandas.Series, optional, None): Data series of
                 record weights for records with positive original target values.
-                Format: rows=records, col=weight. See 'Notes'.
+                Format: rows=records, col=weight.
         
         Raises:
             ValueError:
@@ -301,11 +336,13 @@ class MapTargetToNormalDist:
             scipy.stats.boxcox, self.transform
         
         Notes:
+            * Inverse Box-Cox transformation:
+                x = (y*lam + 1)^(1/lam), if lam != 0
+                x = exp(y)             , if lam = 0
             * Only records with target values > 0 were kept by `transform`.
                 The `inverse_transform` does not replace the dropped records.
             * `df_features` and `ds_weight` are not used in `inverse_transform`.
-                The arguments are passed to maintain a consistent API for
-                `sklearn.pipeline.Pipeline`.
+                The arguments are passed to maintain a consistent API.
 
         """
         # Check arguments.
@@ -328,6 +365,7 @@ class MapTargetToNormalDist:
         # Inverse transform the target values.
         ds_target_itform = ds_target_itform.apply(
             lambda y_val: self._inverse_boxcox(y_val, lmbda=self.lmbda))
+        ds_target_itform.name += '_orig'
         return (df_features_itform, ds_target_itform, ds_weight_itform)
 
 
@@ -345,15 +383,16 @@ class MapUniqueToTargetMedian:
 
     Examples:
         * Example fit, transform, and inverse transform:
-            A categorical feature, 'cat_ftr', is transformed into 'cat_ftr_med',
+            A categorical feature, 'cat_ftr',
+            is transformed into 'cat_ftr_med',
             then 'cat_ftr_med' is inverse transformed into 'cat_ftr_med_orig'.
         * Created (transformed/inverse transformed) features are appended as
             columns. No columns are deleted.
             ```
             >>> # 'cat_ftr' in `df_features` is a categorical feature
-            >>> cat_ftrs = ['ftr0', 'ftr1']
+            >>> cat_features = ['ftr0', 'ftr1']
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> mapping = MapUniqueToTargetMedian(cat_ftrs)
+            >>> mapping = MapUniqueToTargetMedian(cat_features)
             >>> mapping.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
             ... mapping.transform(ftrs, trg, wt)
@@ -377,17 +416,17 @@ class MapUniqueToTargetMedian:
     
     
     def __init__(
-        self, cat_ftrs:list, ftr_orig_med:dict=None) -> None:
+        self, cat_features:list, feature_orig_med:dict=None) -> None:
         r"""Pseudo-private method to instantiate class.
         
         Args:
             self (implicit)
-            cat_ftrs (list): List of column names that are categorical features.
-                Example: ['ftr0', 'ftr1']
-            ftr_orig_med (collections.defaultdict, optional, None): Nested dict
-                as mapping of categorical feature to original values, then from
-                original values to group's unweighted target median. Missing
-                keys map to population's unweighted target median.
+            cat_features (list): List of column names that are categorical
+                features. Example: ['ftr0', 'ftr1']
+            feature_orig_med (collections.defaultdict, optional, None): Nested
+                dict as mapping of categorical feature to original values,
+                then from original values to group's unweighted target median.
+                Missing keys map to population's unweighted target median.
                 If default (`None`), compute using `fit` method.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
     
@@ -398,15 +437,15 @@ class MapUniqueToTargetMedian:
             self.fit
         
         """
-        self.cat_ftrs = cat_ftrs
-        self.ftr_orig_med = ftr_orig_med
+        self.cat_features = cat_features
+        self.feature_orig_med = feature_orig_med
         return None
     
     
     def fit(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, cat_ftrs:list=None) -> None:
-        r"""Fit the grouped categorical features to unweighted target medians.
+        ds_weight:pd.Series=None, cat_features:list=None) -> None:
+        r"""Fit categorical features to unweighted target medians by group.
 
         Args:
             self (implicit)
@@ -416,23 +455,23 @@ class MapUniqueToTargetMedian:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            cat_ftrs (list, optional, None): List of column names that are
-                categorical features. If default (`None`), uses `self.cat_ftrs`
-                from initialization. If defined, replaces `self.cat_ftrs`.
-                Example: ['ftr0', 'ftr1']
+            cat_features (list, optional, None): List of column names that are
+                categorical features. If default (`None`), uses
+                `self.cat_features` from initialization. If defined, replaces
+                `self.cat_features`. Example: ['ftr0', 'ftr1']
         
         Returns:
             None
         
         Attributes:
-            ftr_orig_med (collections.defaultdict): Nested dict as mapping
+            feature_orig_med (collections.defaultdict): Nested dict as mapping
                 of categorical feature to original values, then from original
                 values to group's unweighted target median. Missing keys map to
                 population's unweighted target median.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
         
         Raises:
-            ValueError: Raised if some features in `cat_ftrs` are not
+            ValueError: Raised if some features in `cat_features` are not
                 in `df_features.columns`.
         
         See Also:
@@ -447,24 +486,330 @@ class MapUniqueToTargetMedian:
 
         """
         # Check arguments.
-        if cat_ftrs is not None:
-            self.cat_ftrs = cat_ftrs
+        if cat_features is not None:
+            self.cat_features = cat_features
         else:
-            cat_ftrs = self.cat_ftrs
-        if not set(cat_ftrs).issubset(df_features.columns):
+            cat_features = self.cat_features
+        if not set(cat_features).issubset(df_features.columns):
             raise ValueError(
-                "Some features in `cat_ftrs` are not in `df_features.columns`\n" +
-                "Required: set(cat_ftrs).issubset(df_features.columns)")
+                "Some features in `cat_features` are not in `df_features.columns`\n" +
+                "Required: set(cat_features).issubset(df_features.columns)")
         # Map categorical features to original values,
         # then from original values to group's unweighted target median.
+        # Note: Compute the unweighted target median outside of the lambda func
+        #     otherwise the median will be recomputed with every lambda call.
         if ds_weight is not None:
-            target_vals = list()
-            for tup in zip(ds_target.values
-        
-        self.ftr_orig_med = collections.defaultdict(lambda: ds_target.median())
-        for ftr in cat_ftrs:
-            ds_target.groupby(by=df_features[cat_ftrs].values).median()
+            target_vals = _unweight_target(
+                ds_target=ds_target, ds_weight=ds_weight)
+        else:
+            target_vals = ds_target.values
+        unweighted_target_median = np.nanmedian(target_vals)
+        self.feature_orig_med = collections.defaultdict(
+            lambda: unweighted_target_median)
+        for feature in cat_features:
+            self.feature_orig_med[feature] = collections.defaultdict(
+                lambda: unweighted_target_median)
+            for (feature_val, ds_target_group) in (
+                ds_target.groupby(by=df_features[feature].values)):
+                if ds_weight is not None:
+                    ds_weight_group = ds_weight.loc[ds_target_group.index]
+                    target_group_vals = _unweight_target(
+                        ds_target=ds_target_group, ds_weight=ds_weight_group)
+                else:
+                    target_group_vals = ds_target_group.values
+                unweighted_target_group_median = np.nanmedian(target_group_vals)
+                self.feature_orig_med[feature][feature_val] = \
+                    unweighted_target_group_median
         return None
+
+
+    def transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, feature_orig_med:dict=None) -> tuple:
+        r"""Transform the feature data frame by mapping categorical features
+        to unweighted target medians by group. New columns with suffix '_med'
+        are added to `df_features` from `feature_orig_med.keys()`.
+        
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+            feature_orig_med (collections.defaultdict, optional, None): Nested
+                dict as mapping of categorical feature to original values,
+                then from original values to group's unweighted target median.
+                Missing keys map to population's unweighted target median.
+                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+                If default (`None`), must be previously set by `fit` method.
+                See 'Raises'.
+        
+        Returns:
+            df_features_tform (pandas.DataFrame): Data frame of features values
+                with added features for categorical feature target medians,
+                suffixed with '_med'. Format: rows=records, col=features.
+            ds_target_tform (pandas.Series): Data series of target values,
+                unchanged from input. Format: rows=records, col=target.
+            ds_weight_tform (pandas.Series, optional, None): Data series of record
+                weights, unchanged from input. Format: rows=records, col=weight.
+        
+        Raises:
+            ValueError:
+                * Raised if some features in `feature_orig_med` are not
+                    in `df_features.columns`.
+                * Raised if `feature_orig_med` is undefined,
+                    i.e. if `feature_orig_med is None` and `fit` has not already
+                    been called.
+        
+        See Also:
+            self.fit, self.inverse_transform
+        
+        Notes:
+            * `ds_target` and `ds_weight` are not used in `transform`.
+                The arguments are passed to maintain a consistent API.
+
+        """
+        # Check arguments.
+        if feature_orig_med is not None:
+            if not set(feature_orig_med.keys()).issubset(df_features.columns):
+                raise ValueError(
+                    "Some features in `feature_orig_med` are not in `df_features.columns`\n" +
+                    "Required: set(feature_orig_med.keys()).issubset(df_features.columns)")
+            self.feature_orig_med = feature_orig_med
+        if self.feature_orig_med is None:
+            raise ValueError(
+                "`feature_orig_med` is undefined. Assign `feature_orig_med`\n" +
+                "or call `fit`.\n")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_tform = df_features.copy()
+        ds_target_tform = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight_tform = ds_weight.copy()
+        else:
+            ds_weight_tform = ds_weight
+        # Transform the feature values and add new features.
+        for (feature, orig_med) in self.feature_orig_med.items():
+            df_features_tform[feature+'_med'] =\
+                df_features_tform[feature].replace(orig_med)
+        return (df_features_tform, ds_target_tform, ds_weight_tform)
+        
+    
+    def inverse_transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None, feature_orig_med:dict=None) -> tuple:
+        r"""Inverse transform the feature data frame by mapping grouped
+        unweighted target medians to original categorical features. New columns
+        with suffix '_med_orig' are added to `df_features` from
+        `feature_orig_med.keys()`.
+        
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of feature values with
+                categorical features mapped to target medians and suffixed
+                with '_med'. Format: rows=records, col=features. See 'Raises'.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+            feature_orig_med (collections.defaultdict, optional, None): Nested
+                dict as mapping of categorical feature to original values,
+                then from original values to group's unweighted target median.
+                Missing keys map to population's unweighted target median.
+                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+                If default (`None`), must be previously set by `fit` method.
+                See 'Raises'.
+
+        Returns:
+            df_features_itform (pandas.DataFrame): Data frame of feature values
+                with added features for original feature values,
+                suffixed with '_med_orig'. Format: rows=records, col=features.
+            ds_target_itform (pandas.Series): Data series of positive target
+                values, unchanged from input. Format: rows=records, col=target.
+            ds_weight_itform (pandas.Series, optional, None): Data series of
+                record weights, unchanged from input.
+                Format: rows=records, col=weight.
+        
+        Raises:
+            ValueError:
+                * Raised if some features in `feature_orig_med` with suffix
+                    '_med' are not in `df_features.columns`.
+                * Raised if `feature_orig_med` is undefined,
+                    i.e. if `feature_orig_med is None` and `fit` has not already
+                    been called.
+        
+        See Also:
+            self.transform
+        
+        Notes:
+            * `ds_target` and `ds_weight` are not used in `transform`.
+                The arguments are passed to maintain a consistent API.
+        
+        """
+        # Check arguments.
+        if feature_orig_med is not None:
+            features_med = [key+'_med' for key in feature_orig_med.keys()]
+            if not set(features_med).issubset(df_features.columns):
+                raise ValueError(
+                    "Some features in `feature_orig_med` with suffix '_med'\n" +
+                    "are not in `df_features.columns`\n" +
+                    "Required: set(features_med).issubset(df_features.columns)\n" +
+                    "where features_med = [key+'_med' for key in feature_orig_med.keys()]")
+            self.feature_orig_med = feature_orig_med
+        if self.feature_orig_med is None:
+            raise ValueError(
+                "`feature_orig_med` is undefined. Assign `feature_orig_med`\n" +
+                "or call `fit`.\n")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_itform = df_features.copy()
+        ds_target_itform = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight_itform = ds_weight.copy()
+        else:
+            ds_weight_itform = ds_weight
+        # Transform the feature values and add new features.
+        for (feature, orig_med) in self.feature_orig_med.items():
+            med_orig = {val: key for (key, val) in orig_med.items()}
+            df_features_itform[feature+'_med_orig'] =\
+                df_features_itform[feature+'_med'].replace(med_orig)
+        return (df_features_itform, ds_target_itform, ds_weight_itform)
+
+
+def calc_silhouette_scores(
+    df_features:pd.DataFrame, n_clusters_min:int=2, n_clusters_max:int=10,
+    size_sub:int=None, n_scores:int=10,
+    show_progress:bool=False, show_plot:bool=False) -> list:
+    r"""Plot silhouette scores for determining number of clusters in k-means.
+    
+    Args:
+        df_features (pandas.DataFrame): Data frame of feature values.
+            Format: rows=records, cols=features.
+            Note: `df_features` should aleady be scaled
+            (e.g. sklearn.preprocessing.RobustScaler)
+        n_clusters_min (int, optional, 2): Minimum number of clusters.
+        n_clusters_max (int, optional, 10): Maximum number of clusters.
+        size_sub (int, optional, None): Number of records in subset for
+            calculating scores. See 'Notes', 'Raises'.
+            Default: `None`, then min(1K, all) records are used.
+        n_scores (int, optional, 10): Number of scores to calculate
+            for each cluster. See 'Notes'.
+        show_progress (bool, optional, False): Print status.
+        show_plot (bool, optional, False): Show summary plot of scores.
+        
+    Returns:
+        nclusters_scores (list): List of tuples (n_clusters, scores)
+            where n_clusters is the number of clusters and
+            scores are the calclated silhouette scores.
+            Note: `sklearn.metrics.silhouette_score` may fail if cluster sizes
+            are strongly imbalanced. In these cases,
+            `len(scores) < n_scores` and the shape of `nclusters_scores` is
+            irregular.
+
+    Raises:
+        ValueError:
+            * Raised if not `2 <= n_clusters_min < n_clusters_max`.
+        RuntimeWarning:
+            * Raised if not `size_sub <= len(df_features)`.
+    
+    See Also:
+        sklearn.cluster.MiniBatchKMeans,
+        sklearn.metrics.silhouette_score
+    
+    Notes:
+        * Silhouette scores are a measure comparing the relative size and
+            proximity of clusters. Interpretation from [^sklearn]:
+            "The best value is 1 and the worst value is -1. Values near 0
+            indicate overlapping clusters. Negative values generally indicate
+            that a sample has been assigned to the wrong cluster,
+            as a different cluster is more similar."
+        * For better score estimates, often it's more efficient to increase
+            n_scores rather than size_sub since
+            `sklearn.metrics.silhouette_score` creates a size_sub**2 matrix
+            in RAM.
+        * `sklearn.metrics.silhouette_score` may fail if cluster sizes
+            are strongly imbalanced. In these cases,
+            `len(scores) < n_scores` and the shape of `nclusters_scores` is
+            irregular.
+    
+    References:
+        [^sklearn] http://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html
+    
+    """
+    # TODO: Replace show_progress and warnings.warn with logger.[debug,warn]
+    #     https://github.com/stharrold/stharrold.github.io/issues/58
+    # Check arguments.
+    if not (2 <= n_clusters_min < n_clusters_max):
+        raise ValueError(
+            ("The number of clusters is not valid.\n" +
+             "Required: 2 <= n_clusters_min < n_clusters_max\n" +
+             "Given: 2 <= {nmin} < {nmax}").format(
+                 nmin=n_clusters_min, nmax=n_clusters_max))
+    if (size_sub is not None) and not (size_sub <= len(df_features)):
+        warnings.warn(
+            ("The number of records in the subset for calculating the\n" +
+             "silhouette scores is larger than the number of records\n" +
+             "in the data.\n" +
+             "Suggested: size_sub <= len(df_features)\n" +
+             "Given: {lhs} <= {rhs}").format(
+                 lhs=size_sub, rhs=len(df_features)),
+             RuntimeWarning)
+    if size_sub is None:
+        size_sub = min(int(1e3), len(df_features))
+    # Estimate silhouette scores for each number of clusters.
+    if show_progress:
+        print("Progress:", end=' ')
+    nclusters_scores = list()
+    num_clusters = (n_clusters_max - n_clusters_min) + 1
+    for n_clusters in range(n_clusters_min, n_clusters_max+1):
+        transformer_kmeans = sk_cl.MiniBatchKMeans(n_clusters=n_clusters)
+        labels_pred = transformer_kmeans.fit_predict(X=df_features)
+        scores = list()
+        n_fails = 0
+        while len(scores) < n_scores:
+            try:
+                scores.append(
+                    sk_met.silhouette_score(
+                        X=df_features,
+                        labels=labels_pred,
+                        sample_size=size_sub))
+            except ValueError:
+                n_fails += 1
+            if n_fails > 10*n_scores:
+                warnings.warn(
+                    ("`sklearn.silhouette_score` failed for given data with:\n" +
+                     "n_clusters = {ncl}\n" +
+                     "size_sub = {size}\n").format(
+                         ncl=n_clusters, size=size_sub))
+                break
+        nclusters_scores.append((n_clusters, scores))
+        if show_progress:
+            print("{frac:.0%}".format(
+                    frac=(n_clusters-n_clusters_min+1)/num_clusters),
+                  end=' ')
+    if show_progress:
+        print('\n')
+    # Plot silhouette scores vs number of clusters.
+    if show_plot:
+        nclusters_pctls = np.asarray(
+            [np.append(tup[0], np.percentile(tup[1], q=[5,50,95]))
+             for tup in nclusters_scores])
+        plt.plot(
+            nclusters_pctls[:, 0], nclusters_pctls[:, 2],
+            marker='.', color=sns.color_palette()[0],
+            label='50th pctl score')
+        plt.fill_between(
+            nclusters_pctls[:, 0],
+            y1=nclusters_pctls[:, 1],
+            y2=nclusters_pctls[:, 3],
+            alpha=0.5, color=sns.color_palette()[0],
+            label='5-95th pctls of scores')
+        plt.title("Silhouette score vs number of clusters")
+        plt.xlabel("Number of clusters")
+        plt.ylabel("Silhouette score")
+        plt.legend(loc='lower left')
+        plt.show()
+    return nclusters_scores
 
 
 def calc_feature_importances(
@@ -777,142 +1122,6 @@ def calc_score_pvalue(
              "as great as {diff:.2f} is {pvalue:.1f}%.").format(
                  diff=mean_score_diff, pvalue=pvalue))
     return pvalue
-
-
-def calc_silhouette_scores(
-    df_features:pd.DataFrame, n_clusters_min:int=2, n_clusters_max:int=10,
-    size_sub:int=None, n_scores:int=10,
-    show_progress:bool=False, show_plot:bool=False) -> list:
-    r"""Plot silhouette scores for determining number of clusters in k-means.
-    
-    Args:
-        df_features (pandas.DataFrame): Data frame of feature values.
-            Format: rows=records, cols=features.
-            Note: `df_features` should aleady be scaled
-            (e.g. sklearn.preprocessing.RobustScaler)
-        n_clusters_min (int, optional, 2): Minimum number of clusters.
-        n_clusters_max (int, optional, 10): Maximum number of clusters.
-        size_sub (int, optional, None): Number of records in subset for
-            calculating scores. See 'Notes', 'Raises'.
-            Default: `None`, then min(1K, all) records are used.
-        n_scores (int, optional, 10): Number of scores to calculate
-            for each cluster. See 'Notes'.
-        show_progress (bool, optional, False): Print status.
-        show_plot (bool, optional, False): Show summary plot of scores.
-        
-    Returns:
-        nclusters_scores (list): List of tuples (n_clusters, scores)
-            where n_clusters is the number of clusters and
-            scores are the calclated silhouette scores.
-            Note: `sklearn.metrics.silhouette_score` may fail if cluster sizes
-            are strongly imbalanced. In these cases,
-            `len(scores) < n_scores` and the shape of `nclusters_scores` is
-            irregular.
-
-    Raises:
-        ValueError:
-            * Raised if not `2 <= n_clusters_min < n_clusters_max`.
-        RuntimeWarning:
-            * Raised if not `size_sub <= len(df_features)`.
-    
-    See Also:
-        sklearn.cluster.MiniBatchKMeans,
-        sklearn.metrics.silhouette_score
-    
-    Notes:
-        * Silhouette scores are a measure comparing the relative size and
-            proximity of clusters. Interpretation from [^sklearn]:
-            "The best value is 1 and the worst value is -1. Values near 0
-            indicate overlapping clusters. Negative values generally indicate
-            that a sample has been assigned to the wrong cluster,
-            as a different cluster is more similar."
-        * For better score estimates, often it's more efficient to increase
-            n_scores rather than size_sub since
-            `sklearn.metrics.silhouette_score` creates a size_sub**2 matrix
-            in RAM.
-        * `sklearn.metrics.silhouette_score` may fail if cluster sizes
-            are strongly imbalanced. In these cases,
-            `len(scores) < n_scores` and the shape of `nclusters_scores` is
-            irregular.
-    
-    References:
-        [^sklearn] http://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html
-    
-    """
-    # TODO: Replace show_progress and warnings.warn with logger.[debug,warn]
-    #     https://github.com/stharrold/stharrold.github.io/issues/58
-    # Check arguments.
-    if not (2 <= n_clusters_min < n_clusters_max):
-        raise ValueError(
-            ("The number of clusters is not valid.\n" +
-             "Required: 2 <= n_clusters_min < n_clusters_max\n" +
-             "Given: 2 <= {nmin} < {nmax}").format(
-                 nmin=n_clusters_min, nmax=n_clusters_max))
-    if (size_sub is not None) and not (size_sub <= len(df_features)):
-        warnings.warn(
-            ("The number of records in the subset for calculating the\n" +
-             "silhouette scores is larger than the number of records\n" +
-             "in the data.\n" +
-             "Suggested: size_sub <= len(df_features)\n" +
-             "Given: {lhs} <= {rhs}").format(
-                 lhs=size_sub, rhs=len(df_features)),
-             RuntimeWarning)
-    if size_sub is None:
-        size_sub = min(int(1e3), len(df_features))
-    # Estimate silhouette scores for each number of clusters.
-    if show_progress:
-        print("Progress:", end=' ')
-    nclusters_scores = list()
-    num_clusters = (n_clusters_max - n_clusters_min) + 1
-    for n_clusters in range(n_clusters_min, n_clusters_max+1):
-        transformer_kmeans = sk_cl.MiniBatchKMeans(n_clusters=n_clusters)
-        labels_pred = transformer_kmeans.fit_predict(X=df_features)
-        scores = list()
-        n_fails = 0
-        while len(scores) < n_scores:
-            try:
-                scores.append(
-                    sk_met.silhouette_score(
-                        X=df_features,
-                        labels=labels_pred,
-                        sample_size=size_sub))
-            except ValueError:
-                n_fails += 1
-            if n_fails > 10*n_scores:
-                warnings.warn(
-                    ("`sklearn.silhouette_score` failed for given data with:\n" +
-                     "n_clusters = {ncl}\n" +
-                     "size_sub = {size}\n").format(
-                         ncl=n_clusters, size=size_sub))
-                break
-        nclusters_scores.append((n_clusters, scores))
-        if show_progress:
-            print("{frac:.0%}".format(
-                    frac=(n_clusters-n_clusters_min+1)/num_clusters),
-                  end=' ')
-    if show_progress:
-        print('\n')
-    # Plot silhouette scores vs number of clusters.
-    if show_plot:
-        nclusters_pctls = np.asarray(
-            [np.append(tup[0], np.percentile(tup[1], q=[5,50,95]))
-             for tup in nclusters_scores])
-        plt.plot(
-            nclusters_pctls[:, 0], nclusters_pctls[:, 2],
-            marker='.', color=sns.color_palette()[0],
-            label='50th pctl score')
-        plt.fill_between(
-            nclusters_pctls[:, 0],
-            y1=nclusters_pctls[:, 1],
-            y2=nclusters_pctls[:, 3],
-            alpha=0.5, color=sns.color_palette()[0],
-            label='5-95th pctls of scores')
-        plt.title("Silhouette score vs number of clusters")
-        plt.xlabel("Number of clusters")
-        plt.ylabel("Silhouette score")
-        plt.legend(loc='lower left')
-        plt.show()
-    return nclusters_scores
 
 
 def plot_actual_vs_predicted(
