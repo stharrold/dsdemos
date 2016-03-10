@@ -66,7 +66,7 @@ def _unweight_target(
     return target_vals
     
 
-class StepTargetToNormalDist:
+class StepReplaceTargetWithNormal:
     r"""Pipeline step: Keep only positive target values and transform
     unweighted values to be normally distributed using a Box-Cox power
     transformation.
@@ -88,7 +88,7 @@ class StepTargetToNormalDist:
                 dropped records.
             ```
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> cls = StepTargetToNormalDist()
+            >>> cls = StepReplaceTargetWithNormal()
             >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
             ... cls.transform(ftrs, trg, wt)
@@ -253,12 +253,11 @@ class StepTargetToNormalDist:
             lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.lmbda))
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
-
-    def _inverse_boxcox(self, y_vals, lmbda:float):
+    @staticmethod
+    def _inverse_boxcox(y_vals, lmbda:float):
         r"""Pseudo-private method to invert `scipy.stats.boxcox`.
         
         Args:
-            self (implicit)
             y_vals (float or numpy.ndarray): Box-Cox transformed values to
                 inverse transform.
             lmbda (float): Box-Cox transformation parameter.
@@ -274,8 +273,8 @@ class StepTargetToNormalDist:
             * Inverse Box-Cox transformation:
                 x = (y*lam + 1)^(1/lam), if lam != 0
                 x = exp(y)             , if lam = 0
-            * The call signature forces `lmbda` to be explicitly assigned
-                even through `lmbda` is also passed through `self.lmbda`.
+            * As a static method, the call signature forces arguments to be
+                passed explicitly.
         
         """
         y_vals = np.asarray(y_vals)
@@ -357,7 +356,7 @@ class StepTargetToNormalDist:
         return (df_features_itform, ds_target_itform, ds_weight_itform)
 
 
-class StepRemoveConstantFeatures:
+class StepDropConstantFeatures:
     r"""Pipeline step: Remove features that are constants.
     
     Notes:
@@ -375,7 +374,7 @@ class StepRemoveConstantFeatures:
             ```
             >>> const_features = ['ftr0', 'ftr1']
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> cls = StepRemoveConstantFeatures()
+            >>> cls = StepDropConstantFeatures()
             >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_form) =\
             ... cls.transform(ftrs, trg, wt)
@@ -383,7 +382,7 @@ class StepRemoveConstantFeatures:
             True
             >>> (ftrs_itform, trg_itform, wt_itform) =\
             ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
-            >>> np.all(np.isclose(ftrs, ftrs_itform[ftrs.columns]))
+            >>> np.all(ftrs == ftrs_itform[ftrs.columns])
             True
             ```
     
@@ -455,7 +454,7 @@ class StepRemoveConstantFeatures:
         self.features_const = dict()
         for feature in df_features.columns:
             first_value = df_features[feature].iloc[0]
-            if np.all(np.isclose(df_features[feature], first_value)):
+            if np.all(df_features[feature] == first_value):
                 self.features_const[feature] = first_value
         return None
 
@@ -570,15 +569,16 @@ class StepRemoveConstantFeatures:
         return (df_features_itform, ds_target_itform, ds_weight_itform)
     
 
-class StepCategoricalToTargetMedian:
-    r"""Pipeline step: Map features to informative priors of
-    categorical features.
+class StepReplaceCategoricalWithTarget:
+    r"""Pipeline step: Replace categorical features with group-wise target
+    means.
     
     Notes:
         * Motivation: This transformation includes an informative prior into
             the feature, i.e. the feature's group-wise relationship to the
             target. Splits in the transformed feature now correspond to splits
-            in the target value.
+            in the target value. The mean is used instead of the median to
+            ensure that features are mapped to unique target values.
         * Transformed/inverse transformed feature columns are overwritten.
 
     Examples:
@@ -589,7 +589,7 @@ class StepCategoricalToTargetMedian:
             ```
             >>> cat_features = ['ftr0', 'ftr1']
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> cls = StepCategoricalToTargetMedian(cat_features)
+            >>> cls = StepReplaceCategoricalWithTarget(cat_features)
             >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
             ... cls.transform(ftrs, trg, wt)
@@ -597,7 +597,7 @@ class StepCategoricalToTargetMedian:
             True
             >>> (ftrs_itform, trg_itform, wt_itform) =\
             ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
-            >>> np.all(np.isclose(ftrs, ftrs_itform))
+            >>> np.all(ftrs == ftrs_itform)
             True
             ```
 
@@ -607,14 +607,14 @@ class StepCategoricalToTargetMedian:
     """
     
     
+    @staticmethod
     def _invert_defaultdict(
-        self, ddict:collections.defaultdict,
+        ddict:collections.defaultdict,
         default_factory=None) -> collections.defaultdict:
-        r"""Pseudo-private method to invert a nested defaultdict,
-        e.g. `self.features_orig_med`.
+        r"""Pseudo-private static method to invert a nested defaultdict,
+        e.g. `self.features_orig_mean`.
         
         Args:
-            self (implicit)
             ddict (collections.defaultdict): Nested dict with max depth of 2
                 and hashable values at the deepest dict. Both dicts have
                 default values.
@@ -632,8 +632,8 @@ class StepCategoricalToTargetMedian:
             self.inverse_transform
         
         Notes:
-            * The call signature forces `ddict` to be explicitly assigned even
-                though `ddict` is passed through `self.feature_orig_med`.
+            * As a static method, the call signature forces arguments to be
+                passed explicitly.
         
         """
         # Check arguments.
@@ -651,20 +651,23 @@ class StepCategoricalToTargetMedian:
             ddict_inv[key0].update({val1: key1 for (key1, val1) in ddict1.items()})
         return ddict_inv
     
+    @staticmethod
+    def _are_unique_mappings():
+        pass
     
     def __init__(
         self, cat_features:list,
-        features_orig_med:collections.defaultdict=None) -> None:
+        features_orig_mean:collections.defaultdict=None) -> None:
         r"""Pseudo-private method to initialize class.
         
         Args:
             self (implicit)
             cat_features (list): List of column names that are categorical
                 features. Example: ['ftr0', 'ftr1']
-            features_orig_med (collections.defaultdict, optional, None): Nested
+            features_orig_mean (collections.defaultdict, optional, None): Nested
                 dict as mapping of categorical feature to original values,
-                then from original values to group's unweighted target median.
-                Missing keys map to population's unweighted target median.
+                then from original values to group's unweighted target mean.
+                Missing keys map to population's unweighted target mean.
                 If default (`None`), compute using `fit` method.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
     
@@ -672,42 +675,44 @@ class StepCategoricalToTargetMedian:
             None
 
         Attributes:
-            self.features_med_orig (collections.defaultdict): Calculated if
-                `features_orig_med` assigned, otherwise initialized to `None`.
+            self.features_mean_orig (collections.defaultdict): Calculated if
+                `features_orig_mean` assigned, otherwise initialized to `None`.
                 Nested dict as mapping of categorical feature to group's
-                unweighted target median then to original values. Missing keys 
+                unweighted target mean then to original values. Missing keys 
                 map to `None`.
                 Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
 
         Raises:
             ValueError: Raised if some features in `cat_features` are
-                not in `features_orig_med`.
+                not in `features_orig_mean`.
+            RuntimeWarning: Raised if multiple unique values within a
+                categorical feature map to the same group target mean.
             
         See Also:
             self.fit
         
         """
         # Check arguments.
-        if features_orig_med is not None:
-            if not set(cat_features).issubset(features_orig_med.keys()):
+        if features_orig_mean is not None:
+            if not set(cat_features).issubset(features_orig_mean.keys()):
                 raise ValueError(
-                    "Some features in `cat_features` are not in `features_orig_med`\n" +
-                    "Required: set(cat_features).issubset(features_orig_med.keys())")
+                    "Some features in `cat_features` are not in `features_orig_mean`\n" +
+                    "Required: set(cat_features).issubset(features_orig_mean.keys())")
         # Assign values as class instance attributes.
         self.cat_features = cat_features
-        self.features_orig_med = features_orig_med
-        self.features_med_orig = None
-        if self.features_orig_med is not None:
+        self.features_orig_mean = features_orig_mean
+        self.features_mean_orig = None
+        if self.features_orig_mean is not None:
             default_factory = lambda: None
-            self.features_med_orig = self._invert_defaultdict(
-                ddict=self.features_orig_med, default_factory=default_factory)
+            self.features_mean_orig = self._invert_defaultdict(
+                ddict=self.features_orig_mean, default_factory=default_factory)
         return None
     
     
     def fit(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
         ds_weight:pd.Series=None) -> None:
-        r"""Fit categorical features to unweighted target medians by group.
+        r"""Fit categorical features to unweighted target means by group.
 
         Args:
             self (implicit)
@@ -722,16 +727,15 @@ class StepCategoricalToTargetMedian:
             None
         
         Attributes:
-            self.features_orig_med (collections.defaultdict): Calculated by
+            self.features_orig_mean (collections.defaultdict): Calculated by
                 `fit`. Nested dict as mapping of categorical feature to original
                 values, then from original values to group's unweighted target
-                median. Missing keys map to population's unweighted target
-                median.
+                mean. Missing keys map to population's unweighted target mean.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
-            self.features_med_orig (collections.defaultdict): Calculated by
+            self.features_mean_orig (collections.defaultdict): Calculated by
                 `fit`. Nested dict as mapping of categorical feature to group's
-                unweighted target median then to original values. Missing
-                keys map to population's unweighted target median.
+                unweighted target mean then to original values. Missing
+                keys map to population's unweighted target mean.
                 Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
         
         Raises:
@@ -743,10 +747,10 @@ class StepCategoricalToTargetMedian:
         
         Notes:
             * For each categorical feature, group records by unique values and
-                map the group values to the unweighted target median for that
+                map the group values to the unweighted target mean for that
                 group.
             * For new data, values that have not been seen before are mapped
-                to the target's unweighted median.
+                to the target's unweighted mean.
 
         """
         # Check arguments.
@@ -755,20 +759,21 @@ class StepCategoricalToTargetMedian:
                 "Some features in `self.cat_features` are not in `df_features.columns`\n" +
                 "Required: set(self.cat_features).issubset(df_features.columns)")
         # Map categorical features to original values,
-        # then from original values to group's unweighted target median.
-        # Note: Compute the unweighted target median outside of the lambda func
-        #     otherwise the median will be recomputed with every lambda call.
+        # then from original values to group's unweighted target mean.
+        # Note: Compute the unweighted target mean outside of the lambda
+        #     function otherwise the mean will be recomputed with every
+        #     call of the lambda function.
         if ds_weight is not None:
             target_vals = _unweight_target(
                 ds_target=ds_target, ds_weight=ds_weight)
         else:
             target_vals = ds_target.values
-        unweighted_target_median = np.nanmedian(target_vals)
-        self.features_orig_med = collections.defaultdict(
-            lambda: unweighted_target_median)
+        unweighted_target_mean = np.nanmean(target_vals)
+        self.features_orig_mean = collections.defaultdict(
+            lambda: unweighted_target_mean)
         for feature in self.cat_features:
-            self.features_orig_med[feature] = collections.defaultdict(
-                lambda: unweighted_target_median)
+            self.features_orig_mean[feature] = collections.defaultdict(
+                lambda: unweighted_target_mean)
             for (feature_val, ds_target_group) in (
                 ds_target.groupby(by=df_features[feature].values)):
                 if ds_weight is not None:
@@ -777,15 +782,15 @@ class StepCategoricalToTargetMedian:
                         ds_target=ds_target_group, ds_weight=ds_weight_group)
                 else:
                     target_group_vals = ds_target_group.values
-                unweighted_target_group_median = np.nanmedian(target_group_vals)
-                self.features_orig_med[feature][feature_val] = \
-                    unweighted_target_group_median
+                unweighted_target_group_mean = np.nanmean(target_group_vals)
+                self.features_orig_mean[feature][feature_val] = \
+                    unweighted_target_group_mean
         # Make the inverse mapping:
-        # Map categorical features to group's unweighted target median,
-        # then from the target median to the group's original value.
+        # Map categorical features to group's unweighted target mean,
+        # then from the target mean to the group's original value.
         default_factory = lambda: None
-        self.features_med_orig = self._invert_defaultdict(
-            ddict=self.features_orig_med, default_factory=default_factory)
+        self.features_mean_orig = self._invert_defaultdict(
+            ddict=self.features_orig_mean, default_factory=default_factory)
         return None
 
 
@@ -793,7 +798,7 @@ class StepCategoricalToTargetMedian:
         self, df_features:pd.DataFrame, ds_target:pd.Series,
         ds_weight:pd.Series=None) -> tuple:
         r"""Transform the feature data frame by mapping categorical features
-        to unweighted target medians by group. Transformed features are
+        to unweighted target means by group. Transformed features are
         replaced.
         
         Args:
@@ -807,7 +812,7 @@ class StepCategoricalToTargetMedian:
 
         Returns:
             df_features_tform (pandas.DataFrame): Data frame of features values
-                with categorical features mapped to target medians.
+                with categorical features mapped to target means.
                 Format: rows=records, col=features.
             ds_target_tform (pandas.Series): Data series of target values,
                 unchanged from input. Format: rows=records, col=target.
@@ -817,10 +822,10 @@ class StepCategoricalToTargetMedian:
         
         Raises:
             ValueError:
-                * Raised if `self.features_orig_med` is undefined,
-                    i.e. if `features_orig_med` was not assigned with the class
+                * Raised if `self.features_orig_mean` is undefined,
+                    i.e. if `features_orig_mean` was not assigned with the class
                     initialization or if `fit` has not already been called.
-                * Raised if some features in `self.features_orig_med` are not
+                * Raised if some features in `self.features_orig_mean` are not
                     in `df_features.columns`.
         
         See Also:
@@ -832,14 +837,14 @@ class StepCategoricalToTargetMedian:
 
         """
         # Check arguments.
-        if self.features_orig_med is None:
+        if self.features_orig_mean is None:
             raise ValueError(
-                "`self.features_orig_med` is undefined. Call `fit` to calculate.")
-        if not set(self.features_orig_med.keys()).issubset(df_features.columns):
+                "`self.features_orig_mean` is undefined. Call `fit` to calculate.")
+        if not set(self.features_orig_mean.keys()).issubset(df_features.columns):
             raise ValueError(
-                "Some features in `self.features_orig_med` are not in `df_features.columns`\n" +
-                "Re-run `self.fit` to rebuild `self.features_orig_med`.\n" +
-                "Required: set(self.features_orig_med.keys()).issubset(df_features.columns)")
+                "Some features in `self.features_orig_mean` are not in `df_features.columns`\n" +
+                "Re-run `self.fit` to rebuild `self.features_orig_mean`.\n" +
+                "Required: set(self.features_orig_mean.keys()).issubset(df_features.columns)")
         # Copy data frames/series to avoid modifying input data.
         df_features_tform = df_features.copy()
         ds_target_tform = ds_target.copy()
@@ -848,8 +853,8 @@ class StepCategoricalToTargetMedian:
         else:
             ds_weight_tform = ds_weight
         # Transform the feature values
-        # from their original values to grouped target medians.
-        df_features_tform.replace(self.features_orig_med, inplace=True)
+        # from their original values to grouped target means.
+        df_features_tform.replace(self.features_orig_mean, inplace=True)
         return (df_features_tform, ds_target_tform, ds_weight_tform)
         
     
@@ -857,13 +862,13 @@ class StepCategoricalToTargetMedian:
         self, df_features:pd.DataFrame, ds_target:pd.Series,
         ds_weight:pd.Series=None) -> tuple:
         r"""Inverse transform the feature data frame by mapping grouped
-        unweighted target medians to original categorical features. Inverse
+        unweighted target means to original categorical features. Inverse
         transformed features are replaced.
         
         Args:
             self (implicit)
             df_features (pandas.DataFrame): Data frame of feature values with
-                categorical features mapped to target medians.
+                categorical features mapped to target means.
                 Format: rows=records, col=features. See 'Raises'.
             ds_target (pandas.Series): Data series of target values.
                 Format: rows=records, col=target.
@@ -882,10 +887,10 @@ class StepCategoricalToTargetMedian:
         
         Raises:
             ValueError:
-                * Raised if `self.features_med_orig` is undefined,
-                    i.e. if `features_orig_med` was not assigned with the class
+                * Raised if `self.features_mean_orig` is undefined,
+                    i.e. if `features_orig_mean` was not assigned with the class
                     initialization or if `fit` has not already been called.
-                * Raised if some features in `self.features_orig_med` are not
+                * Raised if some features in `self.features_orig_mean` are not
                     in `df_features.columns`.
         
         See Also:
@@ -897,18 +902,18 @@ class StepCategoricalToTargetMedian:
         
         """
         # Check arguments.
-        if self.features_orig_med is None:
+        if self.features_orig_mean is None:
             raise ValueError(
-                "`self.features_orig_med` is undefined. Call `fit` to calculate.")
-        if not set(self.features_orig_med.keys()).issubset(df_features.columns):
+                "`self.features_orig_mean` is undefined. Call `fit` to calculate.")
+        if not set(self.features_orig_mean.keys()).issubset(df_features.columns):
             raise ValueError(
-                "Some features in `self.features_orig_med` are not in `df_features.columns`\n" +
-                "Required: set(self.features_orig_med.keys()).issubset(df_features.columns)")
-        if self.features_med_orig is None:
+                "Some features in `self.features_orig_mean` are not in `df_features.columns`\n" +
+                "Required: set(self.features_orig_mean.keys()).issubset(df_features.columns)")
+        if self.features_mean_orig is None:
             raise AssertionError(
-                "Program error. `self.features_med_orig` is not defined.\n" +
-                "Required: if `self.features_orig_med is not None`,\n" +
-                "then `self.features_med_orig is not None`")
+                "Program error. `self.features_mean_orig` is not defined.\n" +
+                "Required: if `self.features_orig_mean is not None`,\n" +
+                "then `self.features_mean_orig is not None`")
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
@@ -917,12 +922,12 @@ class StepCategoricalToTargetMedian:
         else:
             ds_weight_itform = ds_weight
         # Inverse transform the feature values
-        # from grouped target medians to their original values.
-        df_features_itform.replace(self.features_med_orig, inplace=True)
+        # from grouped target means to their original values.
+        df_features_itform.replace(self.features_mean_orig, inplace=True)
         return (df_features_itform, ds_target_itform, ds_weight_itform)
 
 
-class StepFeaturesToRobustScale:
+class StepRobustScaleFeatures:
     r"""Pipeline step: Scale feature values using statistics that are robust
     to outliers. Record weights are not used.
     
@@ -941,7 +946,7 @@ class StepFeaturesToRobustScale:
             Features are replaced with scaled features.
             ```
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> cls = StepFeaturestoRobustScale()
+            >>> cls = StepRobustScaleFeatures()
             >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
             ... cls.transform(ftrs, trg, wt)
@@ -967,8 +972,8 @@ class StepFeaturesToRobustScale:
         Args:
             self (implicit)
             subset_features (list, optional, None): List of feature column names
-            to robustly scale. If default (`None`), all feature columns
-            are scaled. Example: ['ftr0', 'ftr1']
+                to robustly scale. If default (`None`), all feature columns
+                are scaled. Example: ['ftr0', 'ftr1']
         
         Returns:
             None
@@ -983,7 +988,7 @@ class StepFeaturesToRobustScale:
         
         def fit(
             self, df_features:pd.DataFrame, ds_target:pd.Series,
-            ds_weight:pd.Series=None, subset_features:list=None) -> None:
+            ds_weight:pd.Series=None) -> None:
             r"""Fit a robust scaler to features. Record weights are not used.
             
             Args:
@@ -994,20 +999,17 @@ class StepFeaturesToRobustScale:
                     Format: rows=records, col=target.
                 ds_weight (pandas.Series, optional, None): Data series of record
                     weights. Format: rows=records, col=weight.
-                subset_features (list, optional, None): List of feature column
-                    names to robustly scale. If default (`None`), uses
-                    `self.subset_features` from initialization. If defined,
-                    replaces `self.subset_features`. Example: ['ftr0', 'ftr1']
-            
+
             Returns:
                 None
             
             Raises:
-                ValueError: Raised if some features in `subset_features` are
-                    not in `df_features.columns`.
+                ValueError: Raised if some features in `self.subset_features`
+                    defined during class initialization are not in
+                    `df_features.columns`.
             
             See Also:
-                self.transform
+                self.__init__, self.transform
                 
             Notes:
                 * `ds_target` and `ds_weight` are not used in `fit`.
