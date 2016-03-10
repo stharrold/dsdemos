@@ -8,6 +8,7 @@ r"""Utilities for machine learning.
 # Import standard packages.
 import collections
 import itertools
+import pdb
 import warnings
 # Import installed packages.
 import matplotlib.pyplot as plt
@@ -65,7 +66,7 @@ def _unweight_target(
     return target_vals
     
 
-class MapTargetToNormalDist:
+class StepTargetToNormalDist:
     r"""Pipeline step: Keep only positive target values and transform
     unweighted values to be normally distributed using a Box-Cox power
     transformation.
@@ -87,12 +88,12 @@ class MapTargetToNormalDist:
                 dropped records.
             ```
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> mapping = MapTargetToNormalDist()
-            >>> mapping.fit(ftrs, trg, wt)
+            >>> cls = StepTargetToNormalDist()
+            >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
-            ... mapping.transform(ftrs, trg, wt)
+            ... cls.transform(ftrs, trg, wt)
             >>> (ftrs_itform, trg_itform, wt_itform) =\
-            ... mapping.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
             >>> # Some records were dropped:
             >>> len(ftrs_itform) <= len(ftrs)
             True
@@ -112,7 +113,7 @@ class MapTargetToNormalDist:
     
     
     def __init__(self, lmbda:float=None) -> None:
-        r"""Pseudo-private method to instantiate class.
+        r"""Pseudo-private method to initialize class.
         
         Args:
             self (implicit)
@@ -153,11 +154,11 @@ class MapTargetToNormalDist:
             None
         
         Attributes:
-            lmbda (float): Set by calling `fit`. Optimal transformation
+            self.lmbda (float): Calculated by `fit`. Optimal transformation
                 parameter found by `scipy.stats.boxcox_normmax`. See 'Notes'.
             
         See Also:
-            self.transform, scipy.stats.boxcox_normmax
+            self.__init__, self.transform, scipy.stats.boxcox_normmax
         
         Notes:
             * `df_features` is not used in `fit`. The argument is passed to
@@ -191,11 +192,10 @@ class MapTargetToNormalDist:
 
     def transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
+        ds_weight:pd.Series=None) -> tuple:
         r"""Transform data frames/series by keeping only records with positive
         target values and transforming unweighted target values to be normally
-        distributed using a Box-Cox power transformation. Suffix '_norm' is
-        added to `ds_target.name`.
+        distributed using a Box-Cox power transformation.
         
         Args:
             self (implicit)
@@ -205,10 +205,7 @@ class MapTargetToNormalDist:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            lmbda (float, optional, None): Optimal transformation parameter.
-            If default (`None`), must be previously set by `fit` method.
-            See 'Raises'.
-        
+
         Returns:
             df_features_tform (pandas.DataFrame): Data frame of feature values
                 for records with positive target values.
@@ -221,12 +218,12 @@ class MapTargetToNormalDist:
                 Format: rows=records, col=weight.
         
         Raises:
-            ValueError: Raised if `lmbda` is undefined,
-                i.e. if `lmbda is None` and `fit` has not already
-                been called.
+            ValueError: Raised if `self.lmbda` is undefined,
+                i.e. if `lmbda` was not assigned with the class initialization
+                or `fit` has not already been called.
         
         See Also:
-            self.fit, self.inverse_transform
+            self.fit, self.inverse_transform, scipy.stats.boxcox
         
         Notes:
             * Box-Cox transformation:[^wiki]
@@ -235,12 +232,9 @@ class MapTargetToNormalDist:
         
         """
         # Check arguments.
-        if lmbda is not None:
-            self.lmbda = lmbda
         if self.lmbda is None:
             raise ValueError(
-                "`lmbda` is undefined. Assign `lmbda`\n" +
-                "or call `fit`.\n")
+                "`self.lmbda` is undefined. Call `fit` to calculate.")
         # Copy data frames/series to avoid modifying input data.
         df_features_tform = df_features.copy()
         ds_target_tform = ds_target.copy()
@@ -257,7 +251,6 @@ class MapTargetToNormalDist:
         # Transform the target values.
         ds_target_tform = ds_target_tform.apply(
             lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.lmbda))
-        ds_target_tform.name += '_norm'
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
 
@@ -275,12 +268,14 @@ class MapTargetToNormalDist:
                 same shape as `y_vals`.
         
         See Also:
-            scipy.stats.boxcox, self.inverse_transform
+            self.inverse_transform, scipy.stats.boxcox
         
         Notes:
             * Inverse Box-Cox transformation:
                 x = (y*lam + 1)^(1/lam), if lam != 0
                 x = exp(y)             , if lam = 0
+            * The call signature forces `lmbda` to be explicitly assigned
+                even through `lmbda` is also passed through `self.lmbda`.
         
         """
         y_vals = np.asarray(y_vals)
@@ -293,10 +288,9 @@ class MapTargetToNormalDist:
 
     def inverse_transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, lmbda:float=None) -> tuple:
+        ds_weight:pd.Series=None) -> tuple:
         r"""Inverse transform target values from normal distribution to original
-        distribution by inverted Box-Cox power transformation. Suffix '_orig' is
-        added to `ds_target.name`.
+        distribution by inverted Box-Cox power transformation.
         
         Args:
             self (implicit)
@@ -309,10 +303,7 @@ class MapTargetToNormalDist:
             ds_weight (pandas.Series, optional, None): Data series of
                 record weights for records with positive original target values.
                 Format: rows=records, col=weight. See 'Notes'.
-            lmbda (float, optional, None): Optimal transformation parameter.
-                If default (`None`), must be set by calling `fit`.
-                See 'Raises'.
-        
+
         Returns:
             df_features_itform (pandas.DataFrame): Data frame of feature values
                 for records with positive original target values.
@@ -328,12 +319,12 @@ class MapTargetToNormalDist:
             ValueError:
                 * Raised if any target values are <= 0,
                     i.e. if `not numpy.all(ds_target > 0)`.
-                * Raised if `lmbda` is undefined,
-                    i.e. if `lmbda is None` and `fit` has not already
+                * Raised if `self.lmbda` is undefined, i.e. if `lmbda` was not
+                    initialized with the class or `fit` has not already
                     been called.
         
         See Also:
-            scipy.stats.boxcox, self.transform
+            self.fit, self.transform, scipy.stats.boxcox
         
         Notes:
             * Inverse Box-Cox transformation:
@@ -350,11 +341,9 @@ class MapTargetToNormalDist:
             raise ValueError(
                 "All target values must be > 0.\n" +
                 "Required: `numpy.all(ds_target > 0)`")
-        if lmbda is not None:
-            self.lmbda = lmbda
         if self.lmbda is None:
             raise ValueError(
-                "`lmbda` is undefined. Assign `lmbda` or call `fit`.")
+                "`self.lmbda` is undefined. Call `fit` to calculate.")
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
@@ -365,47 +354,250 @@ class MapTargetToNormalDist:
         # Inverse transform the target values.
         ds_target_itform = ds_target_itform.apply(
             lambda y_val: self._inverse_boxcox(y_val, lmbda=self.lmbda))
-        ds_target_itform.name += '_orig'
         return (df_features_itform, ds_target_itform, ds_weight_itform)
 
 
-class MapUniqueToTargetMedian:
-    r"""Pipeline step: Create features from informative priors of
+class StepRemoveConstantFeatures:
+    r"""Pipeline step: Remove features that are constants.
+    
+    Notes:
+        * Motivation: This transformation removes features that have only a
+            single value for all records, and are thus uninformative.
+        * Transformed/inverse transformed feature data frames have
+            dropped/added columns.
+        
+    Examples:
+        * Example fit, transform, and inverse transform:
+            Constant features, ['ftr0', 'ftr1'], are transformed then inverse
+            transformed. The transformed/inverse transformed features are
+            dropped/added. The features added from the inverse transformation
+            may not be in the original order.
+            ```
+            >>> const_features = ['ftr0', 'ftr1']
+            >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
+            >>> cls = StepRemoveConstantFeatures()
+            >>> cls.fit(ftrs, trg, wt)
+            >>> (ftrs_tform, trg_tform, wt_form) =\
+            ... cls.transform(ftrs, trg, wt)
+            >>> len(ftrs.columns) < len(ftrs_tform.columns)
+            True
+            >>> (ftrs_itform, trg_itform, wt_itform) =\
+            ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> np.all(np.isclose(ftrs, ftrs_itform[ftrs.columns]))
+            True
+            ```
+    
+    See Also:
+        sklearn.pipeline.Pipeline
+    
+    """
+    
+    
+    def __init__(self) -> None:
+        r"""Pseudo-private method to initialize class.
+        
+        Args:
+            self (implicit)
+            
+        Returns:
+            None
+
+        Attributes:
+            features_const (dict): Dict mapping column names to that column's
+                constant value. Initialized to `None`. Calcuate using `fit`
+                method. Example: {'ftr0': 0, 'ftr1': 1}
+
+        See Also:
+            self.fit
+
+        """
+        self.features_const = None
+        return None
+        
+    
+    def fit(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None) -> None:
+        r"""Fit to determine constant features.
+
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+        
+        Returns:
+            None
+            
+        Attributes:
+            self.features_const (dict): Calculated by `fit`. Dict mapping
+                column names to that column's constant value.
+                Example: {'ftr0': 0, 'ftr1': 1}
+        
+        Raises:
+            ValueError: Raised if some features in `self.const_features` defined
+                during class initialization are not in `df_features.columns`.
+        
+        See Also:
+            self.__init__, self.transform
+        
+        Notes:
+            * Null values are treated as distinct values. A feature with
+                null and non-null values is not considered a constant.
+            * `ds_target` and `ds_weight` are not used in `fit`.
+                The arguments are passed to maintain a consistent API.
+            
+        """
+        # Determine which features are constant.
+        self.features_const = dict()
+        for feature in df_features.columns:
+            first_value = df_features[feature].iloc[0]
+            if np.all(np.isclose(df_features[feature], first_value)):
+                self.features_const[feature] = first_value
+        return None
+
+
+    def transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None) -> tuple:
+        r"""Transform the feature data frame by dropping the constant features.
+
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of feature values.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+
+        Returns:
+            df_features_tform (pandas.DataFrame): Data frame of features values
+                with constant features dropped.
+                Format: rows=records, col=features.
+            ds_target_tform (pandas.Series): Data series of target values,
+                unchanged from input. Format: rows=records, col=target.
+            ds_weight_tform (pandas.Series, optional, None): Data series of
+                record weights, unchanged from input.
+                Format: rows=records, col=weight.
+        
+        Raises:
+            ValueError:
+                * Raised if `self.features_const` is undefined,
+                    i.e. if `fit` has not already been called.
+
+        See Also:
+            self.fit, self.inverse_transform
+        
+        Notes:
+            * `ds_target` and `ds_weight` are not used in `transform`.
+                The arguments are passed to maintain a consistent API.
+
+        """
+        # Check arguments.
+        if self.features_const is None:
+            raise ValueError(
+                "`self.features_const` is undefined. Call `fit` to calculate.")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_tform = df_features.copy()
+        ds_target_tform = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight_tform = ds_weight.copy()
+        else:
+            ds_weight_tform = ds_weight
+        # Drop constant features.
+        df_features_tform.drop(
+            labels=self.features_const.keys(), axis=1, inplace=True)
+        return (df_features_tform, ds_target_tform, ds_weight_tform)
+
+
+    def inverse_transform(
+        self, df_features:pd.DataFrame, ds_target:pd.Series,
+        ds_weight:pd.Series=None) -> tuple:
+        r"""Inverse transform the feature data frame by adding the dropped
+        constant features.
+
+        Args:
+            self (implicit)
+            df_features (pandas.DataFrame): Data frame of features values
+                with constant features dropped.
+                Format: rows=records, col=features.
+            ds_target (pandas.Series): Data series of target values.
+                Format: rows=records, col=target.
+            ds_weight (pandas.Series, optional, None): Data series of record
+                weights. Format: rows=records, col=weight.
+
+        Returns:
+            df_features_itform (pandas.DataFrame): Data frame of features values
+                with constant features added.
+                Format: rows=records, col=features.
+            ds_target_itform (pandas.Series): Data series of target values,
+                unchanged from input. Format: rows=records, col=target.
+            ds_weight_itform (pandas.Series, optional, None): Data series of
+                record weights, unchanged from input.
+                Format: rows=records, col=weight.
+        
+        Raises:
+            ValueError:
+                * Raised if `self.features_const` is undefined,
+                    i.e. if `fit` has not already been called.
+
+        See Also:
+            self.fit, self.transform
+        
+        Notes:
+            * `ds_target` and `ds_weight` are not used in `transform`.
+                The arguments are passed to maintain a consistent API.
+
+        """
+        # Check arguments.
+        if self.features_const is None:
+            raise ValueError(
+                "`self.features_const` is undefined. Call `fit` to calculate.")
+        # Copy data frames/series to avoid modifying input data.
+        df_features_itform = df_features.copy()
+        ds_target_itform = ds_target.copy()
+        if ds_weight is not None:
+            ds_weight_itform = ds_weight.copy()
+        else:
+            ds_weight_itform = ds_weight
+        # Add constant features.
+        for (feature, const) in self.features_const.items():
+            df_features_itform[feature] = const
+        return (df_features_itform, ds_target_itform, ds_weight_itform)
+    
+
+class StepCategoricalToTargetMedian:
+    r"""Pipeline step: Map features to informative priors of
     categorical features.
     
     Notes:
-        * Created (transformed/inverse transformed) features are appended as
-            columns. No columns are deleted.
         * Motivation: This transformation includes an informative prior into
             the feature, i.e. the feature's group-wise relationship to the
             target. Splits in the transformed feature now correspond to splits
             in the target value.
+        * Transformed/inverse transformed feature columns are overwritten.
 
     Examples:
         * Example fit, transform, and inverse transform:
-            A categorical feature, 'cat_ftr',
-            is transformed into 'cat_ftr_med',
-            then 'cat_ftr_med' is inverse transformed into 'cat_ftr_med_orig'.
-        * Created (transformed/inverse transformed) features are appended as
-            columns. No columns are deleted.
+            Categorical features, ['ftr0', 'ftr1'], are transformed then inverse
+            transformed. The transformed/inverse transformed features
+            are overwritten.
             ```
-            >>> # 'cat_ftr' in `df_features` is a categorical feature
             >>> cat_features = ['ftr0', 'ftr1']
             >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
-            >>> mapping = MapUniqueToTargetMedian(cat_features)
-            >>> mapping.fit(ftrs, trg, wt)
+            >>> cls = StepCategoricalToTargetMedian(cat_features)
+            >>> cls.fit(ftrs, trg, wt)
             >>> (ftrs_tform, trg_tform, wt_tform) =\
-            ... mapping.transform(ftrs, trg, wt)
-            >>> # 'cat_ftr_med' was added to `ftrs_tform`
-            >>> len(ftrs_tform.columns) > len(ftrs.columns)
+            ... cls.transform(ftrs, trg, wt)
+            >>> ftrs.shape == ftrs_tform.shape
             True
             >>> (ftrs_itform, trg_itform, wt_itform) =\
-            ... mapping.inverse_transform(ftrs_tform, trg_tform, wt_tform)
-            >>> # 'cat_ftr_med_orig' was added to `ftrs_itform`
-            >>> len(ftrs_itform.columns) > len(ftrs_tform.columns)
-            True
-            >>> # 'cat_ftr' equals 'cat_ftr_med_orig'
-            >>> np.all(ftrs['cat_ftr'] == ftrs_itform['cat_ftr_med_orig'])
+            ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> np.all(np.isclose(ftrs, ftrs_itform))
             True
             ```
 
@@ -415,15 +607,61 @@ class MapUniqueToTargetMedian:
     """
     
     
+    def _invert_defaultdict(
+        self, ddict:collections.defaultdict,
+        default_factory=None) -> collections.defaultdict:
+        r"""Pseudo-private method to invert a nested defaultdict,
+        e.g. `self.features_orig_med`.
+        
+        Args:
+            self (implicit)
+            ddict (collections.defaultdict): Nested dict with max depth of 2
+                and hashable values at the deepest dict. Both dicts have
+                default values.
+                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+            default_factory (function, optional, None): Factory function to
+                set default values of `ddict_inv`. If default (`None`),
+                `default_factory = ddict.default_factory` for top-level and
+                `default_factory = ddict[key].default_factory` for bottom-level.
+            
+        Returns:
+            ddict_inv (collections.defaultdict): Inverted `ddict`.
+                Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
+        
+        See Also:
+            self.inverse_transform
+        
+        Notes:
+            * The call signature forces `ddict` to be explicitly assigned even
+                though `ddict` is passed through `self.feature_orig_med`.
+        
+        """
+        # Check arguments.
+        if default_factory is None:
+            default_factory0 = ddict.default_factory
+        else:
+            default_factory0 = default_factory
+        ddict_inv = collections.defaultdict(default_factory0)
+        for (key0, ddict1) in ddict.items():
+            if default_factory is None:
+                default_factory1 = ddict1.default_factory
+            else:
+                default_factory1 = default_factory
+            ddict_inv[key0] = collections.defaultdict(default_factory1)
+            ddict_inv[key0].update({val1: key1 for (key1, val1) in ddict1.items()})
+        return ddict_inv
+    
+    
     def __init__(
-        self, cat_features:list, feature_orig_med:dict=None) -> None:
-        r"""Pseudo-private method to instantiate class.
+        self, cat_features:list,
+        features_orig_med:collections.defaultdict=None) -> None:
+        r"""Pseudo-private method to initialize class.
         
         Args:
             self (implicit)
             cat_features (list): List of column names that are categorical
                 features. Example: ['ftr0', 'ftr1']
-            feature_orig_med (collections.defaultdict, optional, None): Nested
+            features_orig_med (collections.defaultdict, optional, None): Nested
                 dict as mapping of categorical feature to original values,
                 then from original values to group's unweighted target median.
                 Missing keys map to population's unweighted target median.
@@ -432,19 +670,43 @@ class MapUniqueToTargetMedian:
     
         Returns:
             None
+
+        Attributes:
+            self.features_med_orig (collections.defaultdict): Calculated if
+                `features_orig_med` assigned, otherwise initialized to `None`.
+                Nested dict as mapping of categorical feature to group's
+                unweighted target median then to original values. Missing keys 
+                map to `None`.
+                Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
+
+        Raises:
+            ValueError: Raised if some features in `cat_features` are
+                not in `features_orig_med`.
             
         See Also:
             self.fit
         
         """
+        # Check arguments.
+        if features_orig_med is not None:
+            if not set(cat_features).issubset(features_orig_med.keys()):
+                raise ValueError(
+                    "Some features in `cat_features` are not in `features_orig_med`\n" +
+                    "Required: set(cat_features).issubset(features_orig_med.keys())")
+        # Assign values as class instance attributes.
         self.cat_features = cat_features
-        self.feature_orig_med = feature_orig_med
+        self.features_orig_med = features_orig_med
+        self.features_med_orig = None
+        if self.features_orig_med is not None:
+            default_factory = lambda: None
+            self.features_med_orig = self._invert_defaultdict(
+                ddict=self.features_orig_med, default_factory=default_factory)
         return None
     
     
     def fit(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, cat_features:list=None) -> None:
+        ds_weight:pd.Series=None) -> None:
         r"""Fit categorical features to unweighted target medians by group.
 
         Args:
@@ -455,27 +717,29 @@ class MapUniqueToTargetMedian:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            cat_features (list, optional, None): List of column names that are
-                categorical features. If default (`None`), uses
-                `self.cat_features` from initialization. If defined, replaces
-                `self.cat_features`. Example: ['ftr0', 'ftr1']
-        
+
         Returns:
             None
         
         Attributes:
-            feature_orig_med (collections.defaultdict): Nested dict as mapping
-                of categorical feature to original values, then from original
-                values to group's unweighted target median. Missing keys map to
-                population's unweighted target median.
+            self.features_orig_med (collections.defaultdict): Calculated by
+                `fit`. Nested dict as mapping of categorical feature to original
+                values, then from original values to group's unweighted target
+                median. Missing keys map to population's unweighted target
+                median.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+            self.features_med_orig (collections.defaultdict): Calculated by
+                `fit`. Nested dict as mapping of categorical feature to group's
+                unweighted target median then to original values. Missing
+                keys map to population's unweighted target median.
+                Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
         
         Raises:
-            ValueError: Raised if some features in `cat_features` are not
+            ValueError: Raised if some features in `self.cat_features` are not
                 in `df_features.columns`.
         
         See Also:
-            self.transform
+            self.__init__, self.transform
         
         Notes:
             * For each categorical feature, group records by unique values and
@@ -486,14 +750,10 @@ class MapUniqueToTargetMedian:
 
         """
         # Check arguments.
-        if cat_features is not None:
-            self.cat_features = cat_features
-        else:
-            cat_features = self.cat_features
-        if not set(cat_features).issubset(df_features.columns):
+        if not set(self.cat_features).issubset(df_features.columns):
             raise ValueError(
-                "Some features in `cat_features` are not in `df_features.columns`\n" +
-                "Required: set(cat_features).issubset(df_features.columns)")
+                "Some features in `self.cat_features` are not in `df_features.columns`\n" +
+                "Required: set(self.cat_features).issubset(df_features.columns)")
         # Map categorical features to original values,
         # then from original values to group's unweighted target median.
         # Note: Compute the unweighted target median outside of the lambda func
@@ -504,10 +764,10 @@ class MapUniqueToTargetMedian:
         else:
             target_vals = ds_target.values
         unweighted_target_median = np.nanmedian(target_vals)
-        self.feature_orig_med = collections.defaultdict(
+        self.features_orig_med = collections.defaultdict(
             lambda: unweighted_target_median)
-        for feature in cat_features:
-            self.feature_orig_med[feature] = collections.defaultdict(
+        for feature in self.cat_features:
+            self.features_orig_med[feature] = collections.defaultdict(
                 lambda: unweighted_target_median)
             for (feature_val, ds_target_group) in (
                 ds_target.groupby(by=df_features[feature].values)):
@@ -518,17 +778,23 @@ class MapUniqueToTargetMedian:
                 else:
                     target_group_vals = ds_target_group.values
                 unweighted_target_group_median = np.nanmedian(target_group_vals)
-                self.feature_orig_med[feature][feature_val] = \
+                self.features_orig_med[feature][feature_val] = \
                     unweighted_target_group_median
+        # Make the inverse mapping:
+        # Map categorical features to group's unweighted target median,
+        # then from the target median to the group's original value.
+        default_factory = lambda: None
+        self.features_med_orig = self._invert_defaultdict(
+            ddict=self.features_orig_med, default_factory=default_factory)
         return None
 
 
     def transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, feature_orig_med:dict=None) -> tuple:
+        ds_weight:pd.Series=None) -> tuple:
         r"""Transform the feature data frame by mapping categorical features
-        to unweighted target medians by group. New columns with suffix '_med'
-        are added to `df_features` from `feature_orig_med.keys()`.
+        to unweighted target medians by group. Transformed features are
+        replaced.
         
         Args:
             self (implicit)
@@ -538,30 +804,24 @@ class MapUniqueToTargetMedian:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            feature_orig_med (collections.defaultdict, optional, None): Nested
-                dict as mapping of categorical feature to original values,
-                then from original values to group's unweighted target median.
-                Missing keys map to population's unweighted target median.
-                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
-                If default (`None`), must be previously set by `fit` method.
-                See 'Raises'.
-        
+
         Returns:
             df_features_tform (pandas.DataFrame): Data frame of features values
-                with added features for categorical feature target medians,
-                suffixed with '_med'. Format: rows=records, col=features.
+                with categorical features mapped to target medians.
+                Format: rows=records, col=features.
             ds_target_tform (pandas.Series): Data series of target values,
                 unchanged from input. Format: rows=records, col=target.
-            ds_weight_tform (pandas.Series, optional, None): Data series of record
-                weights, unchanged from input. Format: rows=records, col=weight.
+            ds_weight_tform (pandas.Series, optional, None): Data series of
+                record weights, unchanged from input.
+                Format: rows=records, col=weight.
         
         Raises:
             ValueError:
-                * Raised if some features in `feature_orig_med` are not
+                * Raised if `self.features_orig_med` is undefined,
+                    i.e. if `features_orig_med` was not assigned with the class
+                    initialization or if `fit` has not already been called.
+                * Raised if some features in `self.features_orig_med` are not
                     in `df_features.columns`.
-                * Raised if `feature_orig_med` is undefined,
-                    i.e. if `feature_orig_med is None` and `fit` has not already
-                    been called.
         
         See Also:
             self.fit, self.inverse_transform
@@ -572,16 +832,14 @@ class MapUniqueToTargetMedian:
 
         """
         # Check arguments.
-        if feature_orig_med is not None:
-            if not set(feature_orig_med.keys()).issubset(df_features.columns):
-                raise ValueError(
-                    "Some features in `feature_orig_med` are not in `df_features.columns`\n" +
-                    "Required: set(feature_orig_med.keys()).issubset(df_features.columns)")
-            self.feature_orig_med = feature_orig_med
-        if self.feature_orig_med is None:
+        if self.features_orig_med is None:
             raise ValueError(
-                "`feature_orig_med` is undefined. Assign `feature_orig_med`\n" +
-                "or call `fit`.\n")
+                "`self.features_orig_med` is undefined. Call `fit` to calculate.")
+        if not set(self.features_orig_med.keys()).issubset(df_features.columns):
+            raise ValueError(
+                "Some features in `self.features_orig_med` are not in `df_features.columns`\n" +
+                "Re-run `self.fit` to rebuild `self.features_orig_med`.\n" +
+                "Required: set(self.features_orig_med.keys()).issubset(df_features.columns)")
         # Copy data frames/series to avoid modifying input data.
         df_features_tform = df_features.copy()
         ds_target_tform = ds_target.copy()
@@ -589,58 +847,49 @@ class MapUniqueToTargetMedian:
             ds_weight_tform = ds_weight.copy()
         else:
             ds_weight_tform = ds_weight
-        # Transform the feature values and add new features.
-        for (feature, orig_med) in self.feature_orig_med.items():
-            df_features_tform[feature+'_med'] =\
-                df_features_tform[feature].replace(orig_med)
+        # Transform the feature values
+        # from their original values to grouped target medians.
+        df_features_tform.replace(self.features_orig_med, inplace=True)
         return (df_features_tform, ds_target_tform, ds_weight_tform)
         
     
     def inverse_transform(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None, feature_orig_med:dict=None) -> tuple:
+        ds_weight:pd.Series=None) -> tuple:
         r"""Inverse transform the feature data frame by mapping grouped
-        unweighted target medians to original categorical features. New columns
-        with suffix '_med_orig' are added to `df_features` from
-        `feature_orig_med.keys()`.
+        unweighted target medians to original categorical features. Inverse
+        transformed features are replaced.
         
         Args:
             self (implicit)
             df_features (pandas.DataFrame): Data frame of feature values with
-                categorical features mapped to target medians and suffixed
-                with '_med'. Format: rows=records, col=features. See 'Raises'.
+                categorical features mapped to target medians.
+                Format: rows=records, col=features. See 'Raises'.
             ds_target (pandas.Series): Data series of target values.
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            feature_orig_med (collections.defaultdict, optional, None): Nested
-                dict as mapping of categorical feature to original values,
-                then from original values to group's unweighted target median.
-                Missing keys map to population's unweighted target median.
-                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
-                If default (`None`), must be previously set by `fit` method.
-                See 'Raises'.
 
         Returns:
             df_features_itform (pandas.DataFrame): Data frame of feature values
-                with added features for original feature values,
-                suffixed with '_med_orig'. Format: rows=records, col=features.
-            ds_target_itform (pandas.Series): Data series of positive target
-                values, unchanged from input. Format: rows=records, col=target.
+                with categorical features mapped to original feature values.
+                Format: rows=records, col=features.
+            ds_target_itform (pandas.Series): Data series of target values,
+                unchanged from input. Format: rows=records, col=target.
             ds_weight_itform (pandas.Series, optional, None): Data series of
                 record weights, unchanged from input.
                 Format: rows=records, col=weight.
         
         Raises:
             ValueError:
-                * Raised if some features in `feature_orig_med` with suffix
-                    '_med' are not in `df_features.columns`.
-                * Raised if `feature_orig_med` is undefined,
-                    i.e. if `feature_orig_med is None` and `fit` has not already
-                    been called.
+                * Raised if `self.features_med_orig` is undefined,
+                    i.e. if `features_orig_med` was not assigned with the class
+                    initialization or if `fit` has not already been called.
+                * Raised if some features in `self.features_orig_med` are not
+                    in `df_features.columns`.
         
         See Also:
-            self.transform
+            self.fit, self.transform
         
         Notes:
             * `ds_target` and `ds_weight` are not used in `transform`.
@@ -648,19 +897,18 @@ class MapUniqueToTargetMedian:
         
         """
         # Check arguments.
-        if feature_orig_med is not None:
-            features_med = [key+'_med' for key in feature_orig_med.keys()]
-            if not set(features_med).issubset(df_features.columns):
-                raise ValueError(
-                    "Some features in `feature_orig_med` with suffix '_med'\n" +
-                    "are not in `df_features.columns`\n" +
-                    "Required: set(features_med).issubset(df_features.columns)\n" +
-                    "where features_med = [key+'_med' for key in feature_orig_med.keys()]")
-            self.feature_orig_med = feature_orig_med
-        if self.feature_orig_med is None:
+        if self.features_orig_med is None:
             raise ValueError(
-                "`feature_orig_med` is undefined. Assign `feature_orig_med`\n" +
-                "or call `fit`.\n")
+                "`self.features_orig_med` is undefined. Call `fit` to calculate.")
+        if not set(self.features_orig_med.keys()).issubset(df_features.columns):
+            raise ValueError(
+                "Some features in `self.features_orig_med` are not in `df_features.columns`\n" +
+                "Required: set(self.features_orig_med.keys()).issubset(df_features.columns)")
+        if self.features_med_orig is None:
+            raise AssertionError(
+                "Program error. `self.features_med_orig` is not defined.\n" +
+                "Required: if `self.features_orig_med is not None`,\n" +
+                "then `self.features_med_orig is not None`")
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
@@ -668,12 +916,111 @@ class MapUniqueToTargetMedian:
             ds_weight_itform = ds_weight.copy()
         else:
             ds_weight_itform = ds_weight
-        # Transform the feature values and add new features.
-        for (feature, orig_med) in self.feature_orig_med.items():
-            med_orig = {val: key for (key, val) in orig_med.items()}
-            df_features_itform[feature+'_med_orig'] =\
-                df_features_itform[feature+'_med'].replace(med_orig)
+        # Inverse transform the feature values
+        # from grouped target medians to their original values.
+        df_features_itform.replace(self.features_med_orig, inplace=True)
         return (df_features_itform, ds_target_itform, ds_weight_itform)
+
+
+class StepFeaturesToRobustScale:
+    r"""Pipeline step: Scale feature values using statistics that are robust
+    to outliers. Record weights are not used.
+    
+    Notes:
+        * Motivation: PCA and k-means clustering perform better when the
+            feature values have a standard scale.
+        * Because `sklearn.preprocessing.RobustScaler` uses the interquartile
+            range (25th-75th percentiles) as the measure of the shape of
+            the feature distibution, the interquartile range of the transformed
+            feature distribution will be either 1 (if the original 25th and 75th
+            percentiles were not equal) or 0 (if they were equal).
+        * Transformed/inverse transformed features replace original features.
+    
+    Examples:
+        * Example fit, transform, and inverse transform:
+            Features are replaced with scaled features.
+            ```
+            >>> (ftrs, trg, wt) = (df_features, ds_target, ds_weight)
+            >>> cls = StepFeaturestoRobustScale()
+            >>> cls.fit(ftrs, trg, wt)
+            >>> (ftrs_tform, trg_tform, wt_tform) =\
+            ... cls.transform(ftrs, trg, wt)
+            >>> ftrs_tform.shape == ftrs.shape
+            True
+            >>> np.all(np.isclose(ftrs_tform.median(axis=0), 0))
+            True
+            >>> (ftrs_itform, trg_itform, wt_itform) =\
+            ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> np.all(np.isclose(ftrs, ftrs_itform))
+            True
+            ```
+    
+    See Also:
+        sklearn.pipeline.Pipeline, sklearn.preprocessing.RobustScaler
+    
+    """
+    
+    
+    def __init__(self, subset_features:list=None) -> None:
+        r"""Pseudo-private method to initialize class.
+        
+        Args:
+            self (implicit)
+            subset_features (list, optional, None): List of feature column names
+            to robustly scale. If default (`None`), all feature columns
+            are scaled. Example: ['ftr0', 'ftr1']
+        
+        Returns:
+            None
+        
+        See Also:
+            self.fit
+        
+        """
+        self.subset_features = subset_features
+        return None
+        
+        
+        def fit(
+            self, df_features:pd.DataFrame, ds_target:pd.Series,
+            ds_weight:pd.Series=None, subset_features:list=None) -> None:
+            r"""Fit a robust scaler to features. Record weights are not used.
+            
+            Args:
+                self (implicit)
+                df_features (pandas.DataFrame): Data frame of feature values.
+                    Format: rows=records, col=features.
+                ds_target (pandas.Series): Data series of target values.
+                    Format: rows=records, col=target.
+                ds_weight (pandas.Series, optional, None): Data series of record
+                    weights. Format: rows=records, col=weight.
+                subset_features (list, optional, None): List of feature column
+                    names to robustly scale. If default (`None`), uses
+                    `self.subset_features` from initialization. If defined,
+                    replaces `self.subset_features`. Example: ['ftr0', 'ftr1']
+            
+            Returns:
+                None
+            
+            Raises:
+                ValueError: Raised if some features in `subset_features` are
+                    not in `df_features.columns`.
+            
+            See Also:
+                self.transform
+                
+            Notes:
+                * `ds_target` and `ds_weight` are not used in `fit`.
+                    The arguments are passed to maintain a consistent API.
+            
+            """
+            # Check arguments.
+            if subset_features is not None:
+                self.subset_features = subset_features
+            else:
+                #subset_features = 
+                pass
+            return None
 
 
 def calc_silhouette_scores(

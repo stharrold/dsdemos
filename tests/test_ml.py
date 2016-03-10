@@ -15,12 +15,20 @@ import dsdemos.ml as ml
 
 
 # TODO: def test__unweight_target
-# TODO: def test_MapUniqueToTargetMedian
+# TODO: def test_StepTargetToNormalDist
+#     Test with method=all
 #     Test with/without weights
 #     Test docstring example
 #     Test raises
-# TODO: def test_MapTargetToNormalDist
-#     Test with method=all
+# TODO: def test_StepRemoveConstantFeatures
+#     Test with/without weights
+#     Test docstring example
+#     Test raises
+# TODO: def test_StepCategoricalToTargetMedian
+#     Test with/without weights
+#     Test docstring example
+#     Test raises
+# TODO: def test_StepFeaturesToRobustScale
 #     Test with/without weights
 #     Test docstring example
 #     Test raises
