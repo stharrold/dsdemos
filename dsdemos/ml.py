@@ -606,11 +606,11 @@ class StepReplaceCategoricalWithTarget:
     
     """
     
-    
+
     @staticmethod
     def _invert_defaultdict(
         ddict:collections.defaultdict,
-        default_factory=None) -> collections.defaultdict:
+        default_factory=None, warn:bool=False) -> collections.defaultdict:
         r"""Pseudo-private static method to invert a nested defaultdict,
         e.g. `self.features_orig_mean`.
         
@@ -623,11 +623,21 @@ class StepReplaceCategoricalWithTarget:
                 set default values of `ddict_inv`. If default (`None`),
                 `default_factory = ddict.default_factory` for top-level and
                 `default_factory = ddict[key].default_factory` for bottom-level.
+            warn (bool, optional, False): Warn if `ddict` is not a 1-1 mapping,
+                i.e. two unique values within a categorical feature map to the
+                same target mean. See 'Raises'.
             
         Returns:
             ddict_inv (collections.defaultdict): Inverted `ddict`.
                 Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
         
+        Raises:
+            RuntimeWarning: Raised if `warn=True` and `ddict` is not a 1-1
+                mapping, i.e. two unique values within a categorical feature map
+                to the same target mean. Only the first value seen is defined.
+                All other values are ignored.
+                Example: {'ftr0': {'a': 1, 'b': 1}} would raise RuntimeWaring.
+
         See Also:
             self.inverse_transform
         
@@ -648,16 +658,25 @@ class StepReplaceCategoricalWithTarget:
             else:
                 default_factory1 = default_factory
             ddict_inv[key0] = collections.defaultdict(default_factory1)
-            ddict_inv[key0].update({val1: key1 for (key1, val1) in ddict1.items()})
+            for (key1, val1) in ddict1.items():
+                if val1 in ddict_inv[key0].keys():
+                    if warn:
+                        warnings.warn(
+                            ("`ddict` mapping is not unique. Inverse is ill-defined.\n" +
+                             "Defined: ddict_inv[{k0}][{v1}] = {k1_def}\n" +
+                             "Ignored: {{{k0}: {{{v1}: {k1_ig}}}}}").format(
+                                 k0=key0, v1=val1,
+                                 k1_def=ddict_inv[key0][val1], k1_ig=key1),
+                            RuntimeWarning)
+                else:
+                    ddict_inv[key0][val1] = key1
         return ddict_inv
-    
-    @staticmethod
-    def _are_unique_mappings():
-        pass
+
     
     def __init__(
         self, cat_features:list,
-        features_orig_mean:collections.defaultdict=None) -> None:
+        features_orig_mean:collections.defaultdict=None,
+        warn:bool=False) -> None:
         r"""Pseudo-private method to initialize class.
         
         Args:
@@ -670,7 +689,10 @@ class StepReplaceCategoricalWithTarget:
                 Missing keys map to population's unweighted target mean.
                 If default (`None`), compute using `fit` method.
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
-    
+            warn (bool, optional, False): Warn if `features_orig_mean` is not a
+                1-1 mapping, i.e. two unique values within a categorical feature
+                map to the same target mean. See 'Raises'.
+
         Returns:
             None
 
@@ -685,8 +707,11 @@ class StepReplaceCategoricalWithTarget:
         Raises:
             ValueError: Raised if some features in `cat_features` are
                 not in `features_orig_mean`.
-            RuntimeWarning: Raised if multiple unique values within a
-                categorical feature map to the same group target mean.
+            RuntimeWarning: Raised if `warn=True` and `features_orig_mean` is
+                not a 1-1 mapping, i.e. two unique values within a categorical
+                feature map to the same target mean. Only the first value seen
+                is defined. All other values are ignored.
+                Example: {'ftr0': {'a': 1, 'b': 1}} would raise RuntimeWaring.
             
         See Also:
             self.fit
@@ -705,13 +730,15 @@ class StepReplaceCategoricalWithTarget:
         if self.features_orig_mean is not None:
             default_factory = lambda: None
             self.features_mean_orig = self._invert_defaultdict(
-                ddict=self.features_orig_mean, default_factory=default_factory)
+                ddict=self.features_orig_mean,
+                default_factory=default_factory,
+                warn=True)
         return None
     
     
     def fit(
         self, df_features:pd.DataFrame, ds_target:pd.Series,
-        ds_weight:pd.Series=None) -> None:
+        ds_weight:pd.Series=None, warn:bool=False) -> None:
         r"""Fit categorical features to unweighted target means by group.
 
         Args:
@@ -722,6 +749,9 @@ class StepReplaceCategoricalWithTarget:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
+            warn (bool, optional, False): Warn if `ddict` is not a 1-1 mapping,
+                i.e. two unique values within a categorical feature map to the
+                same target mean. See 'Raises'.
 
         Returns:
             None
@@ -741,6 +771,11 @@ class StepReplaceCategoricalWithTarget:
         Raises:
             ValueError: Raised if some features in `self.cat_features` are not
                 in `df_features.columns`.
+            RuntimeWarning: Raised if `warn=True` and `ddict` is not a 1-1
+                mapping, i.e. two unique values within a categorical feature map
+                to the same target mean. Only the first value seen is defined.
+                All other values are ignored.
+                Example: {'ftr0': {'a': 1, 'b': 1}} would raise RuntimeWaring.
         
         See Also:
             self.__init__, self.transform
@@ -790,7 +825,9 @@ class StepReplaceCategoricalWithTarget:
         # then from the target mean to the group's original value.
         default_factory = lambda: None
         self.features_mean_orig = self._invert_defaultdict(
-            ddict=self.features_orig_mean, default_factory=default_factory)
+            ddict=self.features_orig_mean,
+            default_factory=default_factory,
+            warn=warn)
         return None
 
 

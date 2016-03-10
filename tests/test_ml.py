@@ -99,12 +99,14 @@ def test_StepReplaceCategoricalWithTarget(
 
 # TODO: def test_StepReplaceCategoricalWithTarget_suppl():
 #     * Supplemental pytests for StepReplaceCategoricalWithTarget
-#     * assert that `_are_unique_mappings` raises RuntimeWarning
-#         * when mappings are not unique.
+#     * assert that `_invert_defaultdict` raises RuntimeWarning
+#         when mappings are not unique.
 #     * assert that `__init__` raises ValueError if some features in
 #         `cat_features` are not in `features_orig_mean`.
-#     * assert that `fit` raises ValueError if some features in `cat_features`
-#         are not in `features_orig_mean`.
+#     * assert that `fit` raises:
+#         * ValueError if some features in `cat_features` are not in
+#             `features_orig_mean`.
+#         * RuntimeWarning when mappings are not unique.
 #     * assert that `transform` raises ValueError
 #         * if `self.features_orig_mean`
 #         * if some features in `cat_features` are not in `features_orig_mean`.
