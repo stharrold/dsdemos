@@ -37,6 +37,7 @@ def test_StepReplaceCategoricalWithTarget(
     ds_weight:pd.Series=pd.Series(data=[1, 1, 1, 1, 1, 1]),
     cat_features:list=['ftr0', 'ftr1'],
     features_orig_mean:collections.defaultdict=None,
+    warn:bool=False,
     ref_features_orig_mean:collections.defaultdict=collections.defaultdict(
         lambda: 102.5,
         {'ftr0': collections.defaultdict(lambda: 102.5, {10: 101, 11: 104}),
@@ -53,28 +54,23 @@ def test_StepReplaceCategoricalWithTarget(
     r"""Pytest for StepReplaceCategoricalWithTarget.
     
     """
-    # Test `_invert_defaultdict`: Test as a static method.
-    assert ref_features_mean_orig == \
-        ml.StepReplaceCategoricalWithTarget._invert_defaultdict(
-            ddict=ref_features_orig_mean,
-            default_factory=ref_features_mean_orig.default_factory)
-    # TODO: Test `_are_unique_mappings`.
-    # Test `__init__`: Test `_invert_defaultdict` as an instance method and
-    #     assigned instance attributes.
+    # Test `__init__`: Test assigned instance attributes.
     cls = ml.StepReplaceCategoricalWithTarget(
         cat_features=cat_features,
-        features_orig_mean=features_orig_mean)
-    assert ref_features_mean_orig == cls._invert_defaultdict(
-        ddict=ref_features_orig_mean,
-        default_factory=ref_features_mean_orig.default_factory)
-    assert cls.cat_features == cat_features
-    assert cls.features_orig_mean == features_orig_mean
+        features_orig_mean=features_orig_mean,
+        warn=warn)
+    assert cat_features == cls.cat_features
+    assert features_orig_mean == cls.features_orig_mean
     if cls.features_orig_mean is not None:
-        assert cls.features_mean_orig == ref_features_mean_orig
+        assert ref_features_mean_orig == cls.features_mean_orig
     # Test `fit`: Test assigned as instance attributes.
-    cls.fit(df_features=df_features, ds_target=ds_target, ds_weight=ds_weight)
-    assert cls.features_orig_mean == ref_features_orig_mean
-    assert cls.features_mean_orig == ref_features_mean_orig
+    cls.fit(
+        df_features=df_features,
+        ds_target=ds_target,
+        ds_weight=ds_weight,
+        warn=warn)
+    assert ref_features_orig_mean == cls.features_orig_mean
+    assert ref_features_mean_orig == cls.features_mean_orig
     # Test `transform`: Test returned data frames/series.
     (test_df_features_tform, test_ds_target_tform, test_ds_weight_tform) = \
         cls.transform(
@@ -86,6 +82,7 @@ def test_StepReplaceCategoricalWithTarget(
     assert np.all(ref_ds_weight_tform == test_ds_weight_tform)
     # Test `inverse_transform`: Test returned data frames/series match
     #     untransformed originals.
+    # Note: Does not pass for ill-defined inverse feature-orig-mean mappings.
     (test_df_features_itform, test_ds_target_itform, test_ds_weight_itform) = \
         cls.inverse_transform(
             df_features=test_df_features_tform,
@@ -99,6 +96,9 @@ def test_StepReplaceCategoricalWithTarget(
 
 # TODO: def test_StepReplaceCategoricalWithTarget_suppl():
 #     * Supplemental pytests for StepReplaceCategoricalWithTarget
+#     * Test `_calc_features_mean_orig`: Test as an instance method.
+#         cls._calc_features_mean_orig(default_factory=None, warn=warn)
+#         assert ref_features_mean_orig == cls.features_mean_orig
 #     * assert that `_invert_defaultdict` raises RuntimeWarning
 #         when mappings are not unique.
 #     * assert that `__init__` raises ValueError if some features in

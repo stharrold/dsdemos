@@ -578,7 +578,11 @@ class StepReplaceCategoricalWithTarget:
             the feature, i.e. the feature's group-wise relationship to the
             target. Splits in the transformed feature now correspond to splits
             in the target value. The mean is used instead of the median to
-            ensure that features are mapped to unique target values.
+            ensure that most features are mapped to unique target values,
+            i.e. a 1-1 mapping with a well-defined inverse.
+        * For the inverse transformation, if the mapping between categorical
+            features and target means is not a 1-1 mapping, then each unique
+            target mean maps to only one value within each categorical feature.
         * Transformed/inverse transformed feature columns are overwritten.
 
     Examples:
@@ -597,6 +601,7 @@ class StepReplaceCategoricalWithTarget:
             True
             >>> (ftrs_itform, trg_itform, wt_itform) =\
             ... cls.inverse_transform(ftrs_tform, trg_tform, wt_tform)
+            >>> # transformation is invertible only if mappings are 1-1:
             >>> np.all(ftrs == ftrs_itform)
             True
             ```
@@ -607,39 +612,48 @@ class StepReplaceCategoricalWithTarget:
     """
     
 
-    @staticmethod
-    def _invert_defaultdict(
-        ddict:collections.defaultdict,
-        default_factory=None, warn:bool=False) -> collections.defaultdict:
-        r"""Pseudo-private static method to invert a nested defaultdict,
-        e.g. `self.features_orig_mean`.
+    def _calc_features_mean_orig(
+        self, default_factory=None,
+        warn:bool=False) -> collections.defaultdict:
+        r"""Pseudo-private method to calculate `self.features_mean_orig` by
+        inverting `self.features_orig_mean`.
         
         Args:
-            ddict (collections.defaultdict): Nested dict with max depth of 2
-                and hashable values at the deepest dict. Both dicts have
-                default values.
-                Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
+            self (implicit)
             default_factory (function, optional, None): Factory function to
-                set default values of `ddict_inv`. If default (`None`),
-                `default_factory = ddict.default_factory` for top-level and
-                `default_factory = ddict[key].default_factory` for bottom-level.
-            warn (bool, optional, False): Warn if `ddict` is not a 1-1 mapping,
-                i.e. two unique values within a categorical feature map to the
-                same target mean. See 'Raises'.
-            
-        Returns:
-            ddict_inv (collections.defaultdict): Inverted `ddict`.
-                Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
+                set default values of `self.features_mean_orig`.
+                If default (`None`),
+                `default_factory = self.features_orig_mean.default_factory`
+                for top-level and
+                `default_factory = self.features_orig_mean[feature].default_factory`
+                for bottom-level.
+            warn (bool, optional, False): Warn if `self.features_orig_mean`
+                is not a 1-1 mapping, i.e. two unique values within a
+                categorical feature map to the same target mean. See 'Raises'.
         
+        Returns:
+            None
+        
+        Attributes:
+            self.features_mean_orig (collections.defaultdict): Calculated by
+                `_calc_features_mean_orig`. Nested default dict as mapping
+                of categorical feature to group's unweighted target mean then
+                to original values. Missing keys map to population's unweighted
+                target mean. Duplicate 
+                Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
+
         Raises:
-            RuntimeWarning: Raised if `warn=True` and `ddict` is not a 1-1
-                mapping, i.e. two unique values within a categorical feature map
-                to the same target mean. Only the first value seen is defined.
-                All other values are ignored.
+            ValueError: Raised if `self.features_orig_mean` is undefined,
+                i.e. if `features_orig_mean` was not assigned with the class
+                initialization or if `fit` has not already been called.
+            RuntimeWarning: Raised if `warn=True` and `self.features_orig_mean`
+                is not a 1-1 mapping, i.e. two unique values within a
+                categorical feature map to the same target mean. Only the first
+                value seen is defined. All other values are ignored.
                 Example: {'ftr0': {'a': 1, 'b': 1}} would raise RuntimeWaring.
 
         See Also:
-            self.inverse_transform
+            self.__init__, self.fit
         
         Notes:
             * As a static method, the call signature forces arguments to be
@@ -647,30 +661,35 @@ class StepReplaceCategoricalWithTarget:
         
         """
         # Check arguments.
+        if self.features_orig_mean is None:
+            raise ValueError(
+                "`self.features_orig_mean` is undefined. Call `fit` to calculate.")
+        # Calculate self.features_mean_orig.
         if default_factory is None:
-            default_factory0 = ddict.default_factory
+            default_factory0 = self.features_orig_mean.default_factory
         else:
             default_factory0 = default_factory
-        ddict_inv = collections.defaultdict(default_factory0)
-        for (key0, ddict1) in ddict.items():
+        self.features_mean_orig = collections.defaultdict(default_factory0)
+        for (feature, orig_mean) in self.features_orig_mean.items():
             if default_factory is None:
-                default_factory1 = ddict1.default_factory
+                default_factory1 = orig_mean.default_factory
             else:
                 default_factory1 = default_factory
-            ddict_inv[key0] = collections.defaultdict(default_factory1)
-            for (key1, val1) in ddict1.items():
-                if val1 in ddict_inv[key0].keys():
+            self.features_mean_orig[feature] = collections.defaultdict(default_factory1)
+            for (orig, mean) in orig_mean.items():
+                if mean in self.features_mean_orig[feature].keys():
                     if warn:
                         warnings.warn(
-                            ("`ddict` mapping is not unique. Inverse is ill-defined.\n" +
-                             "Defined: ddict_inv[{k0}][{v1}] = {k1_def}\n" +
-                             "Ignored: {{{k0}: {{{v1}: {k1_ig}}}}}").format(
-                                 k0=key0, v1=val1,
-                                 k1_def=ddict_inv[key0][val1], k1_ig=key1),
+                            ("`self.features_orig_mean` mapping is not unique. Inverse is ill-defined.\n" +
+                             "Defined: self.features_mean_orig[{ftr}][{mean}] = {orig_def}\n" +
+                             "Ignored: {{{ftr}: {{{mean}: {orig_ig}}}}}").format(
+                                 ftr=feature, mean=mean,
+                                 orig_def=self.features_mean_orig[feature][mean],
+                                 orig_ig=orig),
                             RuntimeWarning)
                 else:
-                    ddict_inv[key0][val1] = key1
-        return ddict_inv
+                    self.features_mean_orig[feature][mean] = orig
+        return None
 
     
     def __init__(
@@ -723,16 +742,12 @@ class StepReplaceCategoricalWithTarget:
                 raise ValueError(
                     "Some features in `cat_features` are not in `features_orig_mean`\n" +
                     "Required: set(cat_features).issubset(features_orig_mean.keys())")
-        # Assign values as class instance attributes.
+        # Assign arguments as instance attributes.
         self.cat_features = cat_features
         self.features_orig_mean = features_orig_mean
         self.features_mean_orig = None
         if self.features_orig_mean is not None:
-            default_factory = lambda: None
-            self.features_mean_orig = self._invert_defaultdict(
-                ddict=self.features_orig_mean,
-                default_factory=default_factory,
-                warn=True)
+            self._calc_features_mean(default_factory=lambda: None, warn=True)
         return None
     
     
@@ -749,9 +764,9 @@ class StepReplaceCategoricalWithTarget:
                 Format: rows=records, col=target.
             ds_weight (pandas.Series, optional, None): Data series of record
                 weights. Format: rows=records, col=weight.
-            warn (bool, optional, False): Warn if `ddict` is not a 1-1 mapping,
-                i.e. two unique values within a categorical feature map to the
-                same target mean. See 'Raises'.
+            warn (bool, optional, False): Warn if `self.features_orig_mean`
+                is not a 1-1 mapping, i.e. two unique values within a
+                categorical feature map to the same target mean. See 'Raises'.
 
         Returns:
             None
@@ -764,29 +779,22 @@ class StepReplaceCategoricalWithTarget:
                 Example: {'ftr0': {'a': 0, 'b': 1}, 'ftr1': {'A': 10, 'B': 20}}
             self.features_mean_orig (collections.defaultdict): Calculated by
                 `fit`. Nested dict as mapping of categorical feature to group's
-                unweighted target mean then to original values. Missing
-                keys map to population's unweighted target mean.
+                unweighted target mean then to original values. Missing keys
+                map to `None`.
                 Example: {'ftr0': {0: 'a', 1: 'b'}, 'ftr1': {10: 'A', 20: 'B'}}
         
         Raises:
             ValueError: Raised if some features in `self.cat_features` are not
                 in `df_features.columns`.
-            RuntimeWarning: Raised if `warn=True` and `ddict` is not a 1-1
-                mapping, i.e. two unique values within a categorical feature map
-                to the same target mean. Only the first value seen is defined.
-                All other values are ignored.
+            RuntimeWarning: Raised if `warn=True` and `self.features_orig_mean`
+                is not a 1-1 mapping, i.e. two unique values within a
+                categorical feature map to the same target mean. Only the first
+                value seen is defined. All other values are ignored.
                 Example: {'ftr0': {'a': 1, 'b': 1}} would raise RuntimeWaring.
         
         See Also:
             self.__init__, self.transform
         
-        Notes:
-            * For each categorical feature, group records by unique values and
-                map the group values to the unweighted target mean for that
-                group.
-            * For new data, values that have not been seen before are mapped
-                to the target's unweighted mean.
-
         """
         # Check arguments.
         if not set(self.cat_features).issubset(df_features.columns):
@@ -818,16 +826,12 @@ class StepReplaceCategoricalWithTarget:
                 else:
                     target_group_vals = ds_target_group.values
                 unweighted_target_group_mean = np.nanmean(target_group_vals)
-                self.features_orig_mean[feature][feature_val] = \
+                self.features_orig_mean[feature][feature_val] =\
                     unweighted_target_group_mean
         # Make the inverse mapping:
-        # Map categorical features to group's unweighted target mean,
-        # then from the target mean to the group's original value.
-        default_factory = lambda: None
-        self.features_mean_orig = self._invert_defaultdict(
-            ddict=self.features_orig_mean,
-            default_factory=default_factory,
-            warn=warn)
+        #     Map categorical features to group's unweighted target mean,
+        #     then from the target mean to the group's original value.
+        self._calc_features_mean_orig(default_factory=lambda: None, warn=warn)
         return None
 
 
@@ -950,7 +954,7 @@ class StepReplaceCategoricalWithTarget:
             raise AssertionError(
                 "Program error. `self.features_mean_orig` is not defined.\n" +
                 "Required: if `self.features_orig_mean is not None`,\n" +
-                "then `self.features_mean_orig is not None`")
+                "then `self.features_mean_orig` should already be calculated.")
         # Copy data frames/series to avoid modifying input data.
         df_features_itform = df_features.copy()
         ds_target_itform = ds_target.copy()
