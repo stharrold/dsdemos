@@ -253,6 +253,7 @@ class StepReplaceTargetWithNormal:
             lambda x_val: scipy.stats.boxcox(x_val, lmbda=self.lmbda))
         return (df_features_tform, ds_target_tform, ds_weight_tform)
 
+
     @staticmethod
     def _inverse_boxcox(y_vals, lmbda:float):
         r"""Pseudo-private method to invert `scipy.stats.boxcox`.
@@ -654,10 +655,6 @@ class StepReplaceCategoricalWithTarget:
 
         See Also:
             self.__init__, self.fit
-        
-        Notes:
-            * As a static method, the call signature forces arguments to be
-                passed explicitly.
         
         """
         # Check arguments.
